@@ -1,0 +1,1521 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CHESS RTS REWORKED</title>
+    <style>
+        :root { 
+            --bg: #121212; 
+            --sq-light: #b8c0c4; /* Чуть темнее для контраста */
+            --sq-dark: #6e7f8a;
+            --rows: 8; 
+            --cols: 8;
+            --accent: #f39c12;
+            --menu-bg: rgba(30, 30, 30, 0.98);
+            --tier-1: #95a5a6;
+            --tier-2: #2ecc71;
+            --tier-3: #00d2d3;
+            /* Динамический размер клетки */
+            --sq-size: min(calc((100vw - 10px) / var(--cols)), calc((85vh - 140px) / var(--rows)));
+        }
+
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: radial-gradient(circle at center, #222 0%, #000 100%); 
+            color: white; 
+            display: flex; flex-direction: column; align-items: center; 
+            margin: 0; padding: 0; overflow: hidden; height: 100vh; width: 100vw;
+            user-select: none; -webkit-user-select: none;
+            touch-action: none; /* Блокируем зум и стандартные жесты браузера */
+        }
+        
+        #game-layout { 
+            position: relative; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            width: 100%; 
+            height: 100%; 
+        }
+
+        /* UI PANEL */
+        .ui { 
+            position: absolute; top: 10px; z-index: 100;
+            background: rgba(44, 62, 80, 0.9); padding: 5px 15px; 
+            border-radius: 30px; text-align: center; border: 1px solid #7f8c8d; 
+            backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; gap: 5px; align-items: center;
+            max-width: 95%; width: fit-content;
+        }
+
+        #status { font-size: 1em; color: var(--accent); font-weight: bold; }
+        
+        #resource-panel {
+            display: none; flex-wrap: wrap; justify-content: center; gap: 10px;
+            margin-top: 5px; background: rgba(0,0,0,0.3); padding: 8px 12px;
+            border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
+        }
+        .build-mode #resource-panel { display: flex; animation: fadeIn 0.3s; }
+        
+        .res-item { display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 0.8em; }
+        /* Обновленные цвета ресурсов */
+        .res-wood { color: #8e44ad; filter: brightness(1.5); } /* Дерево */
+        .res-stone { color: #bdc3c7; } /* Камень */
+        .res-metal { color: #f39c12; } /* Металл */
+        .res-cedar { color: #d35400; } /* Кедр */
+        .res-paper { color: #f1c40f; } /* Бумага */
+        .res-food { color: #2ecc71; } /* Еда */
+        .res-gem { color: #00d2d3; text-shadow: 0 0 5px cyan; } /* Алмазы */
+        .res-coal { color: #7f8c8d; text-shadow: 0 0 2px #000; } /* Уголь */
+        .res-poly { color: #e056fd; text-shadow: 0 0 5px magenta; } /* Полимер */
+
+        .limit-reached { color: #e74c3c !important; animation: pulseRed 1s infinite; }
+        @keyframes pulseRed { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        button { 
+            padding: 8px 16px; background: #27ae60; color: white; 
+            border: none; border-radius: 20px; cursor: pointer; font-weight: bold; 
+            transition: 0.2s; text-transform: uppercase; font-size: 0.8em;
+            touch-action: manipulation;
+        }
+
+        /* --- КНОПКА СТРОИТЕЛЬСТВА --- */
+        #toggle-build-btn {
+            position: absolute; bottom: 30px; left: 20px;
+            width: 65px; height: 65px; border-radius: 50%;
+            background: #f39c12; border: 3px solid #fff;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            font-size: 28px; z-index: 160; 
+            display: none; 
+            justify-content: center; align-items: center;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .build-mode #toggle-build-btn { 
+            background: #e74c3c; 
+            transform: rotate(45deg); 
+            bottom: 170px; 
+        }
+
+        /* --- МЕНЮ СТРОИТЕЛЬСТВА (ПК - Вертикально) --- */
+        #build-menu-container {
+            position: absolute; left: 10px; top: 50%;
+            transform: translateY(-50%) translateX(-200%);
+            width: 140px;
+            background: var(--menu-bg); border-radius: 16px; 
+            padding: 10px;
+            display: flex; flex-direction: column; gap: 10px;
+            border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 0 30px rgba(0,0,0,0.7);
+            backdrop-filter: blur(12px); z-index: 150;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            max-height: 80vh;
+        }
+        .build-mode #build-menu-container { transform: translateY(-50%) translateX(0); }
+
+        .menu-tabs { display: flex; flex-direction: column; gap: 5px; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;}
+        .tab-btn {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: #aaa; padding: 8px 0; width: 100%; text-align: center;
+            border-radius: 6px; cursor: pointer; font-size: 0.8em;
+        }
+        .tab-btn.active { background: var(--accent); color: #000; font-weight: bold; border-color: var(--accent); }
+
+        /* Контейнер списка */
+        #build-list {
+            display: flex; flex-direction: column; 
+            overflow-y: auto; overflow-x: hidden;
+            padding: 5px 2px;
+            flex-grow: 1; 
+        }
+
+        /* Скрываем группы, показываем активную */
+        .build-group { display: none; flex-direction: column; gap: 10px; align-items: center; width: 100%; }
+        .build-group.active { display: flex; }
+
+        .build-item {
+            width: 55px; height: 55px; background: rgba(255,255,255,0.05);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            cursor: grab; transition: 0.2s; position: relative; border: 1px solid transparent; flex-shrink: 0;
+            touch-action: none;
+        }
+        .build-item:active { transform: scale(0.95); background: rgba(255,255,255,0.2); }
+        
+        .build-item::after { 
+            position: absolute; top: -5px; right: -5px; 
+            font-size: 9px; padding: 2px 4px; border-radius: 4px; font-weight: bold; color: #000;
+        }
+        
+        /* Цвета тиров */
+        .t1-item { border-color: rgba(255,255,255,0.2); } .t1-item::after { content: 'I'; background: var(--tier-1); }
+        .t2-item { border-color: var(--tier-2); background: rgba(46, 204, 113, 0.05); } .t2-item::after { content: 'II'; background: var(--tier-2); }
+        .t3-item { border-color: var(--tier-3); background: rgba(0, 210, 211, 0.1); } .t3-item::after { content: 'III'; background: var(--tier-3); }
+        
+        /* Спец. стиль для сноса */
+        .demolish-item { border-color: #e74c3c !important; background: rgba(231, 76, 60, 0.1) !important; }
+        .demolish-item::after { content: 'X' !important; background: #e74c3c !important; color: white !important; }
+
+        .build-item .icon { font-size: 28px; pointer-events: none; }
+
+        /* --- МОБИЛЬНАЯ ВЕРСТКА --- */
+        @media (max-width: 768px) {
+            #toggle-build-btn { display: flex; }
+
+            /* Панель снизу */
+            #build-menu-container {
+                left: 0; top: auto; bottom: 0;
+                transform: translateY(110%);
+                width: 100%; box-sizing: border-box;
+                border-radius: 20px 20px 0 0;
+                flex-direction: column; 
+                padding: 10px 0 20px 0; /* Убрал боковые паддинги для свайпа */
+                max-height: 170px;
+                background: #1e1e1e;
+                border-top: 2px solid var(--accent);
+            }
+            .build-mode #build-menu-container { transform: translateY(0); }
+
+            .menu-tabs { 
+                flex-direction: row; 
+                width: 100%; 
+                border-bottom: none; 
+                padding: 0 10px 5px 10px; 
+                box-sizing: border-box;
+                justify-content: space-around;
+            }
+            .tab-btn { width: 30%; font-size: 0.75em; padding: 8px 0; }
+            
+            /* Горизонтальный скролл для мобилы */
+            #build-list {
+                flex-direction: row; 
+                width: 100%; 
+                overflow-x: auto; /* Включаем гориз. скролл */
+                overflow-y: hidden;
+                padding: 10px;
+                box-sizing: border-box;
+                touch-action: pan-x; /* Разрешаем свайп по горизонтали */
+                -webkit-overflow-scrolling: touch; /* Плавность на iOS */
+            }
+            
+            .build-group {
+                flex-direction: row; /* Элементы в ряд */
+                width: max-content; /* Ширина по контенту */
+                gap: 15px;
+            }
+
+            /* Скрываем скроллбар */
+            #build-list::-webkit-scrollbar { display: none; }
+            
+            .build-item { width: 65px; height: 65px; margin-right: 5px; }
+            
+            #forge-ui { bottom: 180px; right: 10px; }
+            
+            .ui { font-size: 0.85em; width: 95%; padding: 5px; }
+        }
+
+        /* --- ДОСКА И ФИГУРЫ --- */
+        #board-wrapper { transition: margin 0.3s; display: flex; align-items: center; justify-content: center; }
+        #board { 
+            display: grid; 
+            grid-template-columns: repeat(var(--cols), var(--sq-size)); 
+            grid-template-rows: repeat(var(--rows), var(--sq-size)); 
+            position: relative; background: #333; border: 4px solid #444; border-radius: 4px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6); transition: all 0.5s ease;
+            touch-action: none;
+        }
+        .build-mode #board:not(.expanded) { border-color: var(--accent); box-shadow: 0 0 30px rgba(243, 156, 18, 0.3); }
+        #board.expanded { background: transparent; border: none; box-shadow: none; }
+        
+        .square { 
+            width: var(--sq-size); height: var(--sq-size); 
+            display: flex; justify-content: center; align-items: center; 
+            position: relative; box-sizing: border-box; background-color: #222; 
+        }
+        .square.light { background-color: var(--sq-light); }
+        .square.dark { background-color: var(--sq-dark); }
+        
+        .square.fog::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(10, 15, 20, 0.75); z-index: 5; pointer-events: none; backdrop-filter: grayscale(0.8); }
+        
+        .square.drag-over { background: rgba(241, 196, 15, 0.4) !important; box-shadow: inset 0 0 0 2px #f1c40f; }
+        
+        .piece { 
+            width: 85%; height: 85%; background-size: contain; background-repeat: no-repeat; 
+            background-position: center; cursor: grab; z-index: 10; filter: drop-shadow(0 4px 2px rgba(0,0,0,0.4)); 
+            position: relative; touch-action: none; pointer-events: auto;
+        }
+        .piece .armor-badge {
+            position: absolute; bottom: -2px; left: -2px;
+            background: #3498db; color: white; border: 1px solid white;
+            border-radius: 50%; width: 16px; height: 16px;
+            font-size: 10px; display: flex; align-items: center; justify-content: center;
+            font-weight: bold; z-index: 12;
+        }
+
+        .special-piece { 
+            font-size: calc(var(--sq-size) * 0.65); 
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); 
+            pointer-events: none; z-index: 11; display: flex; justify-content: center; align-items: center;
+            position: relative;
+        }
+        .special-piece .hp-bar {
+            position: absolute; bottom: 0; width: 100%; height: 4px; background: #e74c3c; border:1px solid #000; border-radius: 2px; overflow: hidden;
+        }
+        .special-piece .hp-val { height: 100%; background: #2ecc71; }
+
+        /* MODALS */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 2000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background: #2c3e50; padding: 20px; border-radius: 20px; border: 2px solid #f1c40f;
+            text-align: center; box-shadow: 0 0 50px rgba(241, 196, 15, 0.3); width: 90%; max-width: 400px;
+        }
+        .promo-options { display: flex; gap: 10px; margin-top: 15px; justify-content: center; flex-wrap: wrap; }
+        .promo-btn {
+            width: 60px; height: 60px; background: #34495e; border: 2px solid #7f8c8d;
+            border-radius: 8px; cursor: pointer; font-size: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative;
+        }
+        .promo-btn .cost { font-size: 9px; margin-top: 5px; color: #f1c40f; }
+
+        .dragging-clone {
+            position: fixed; width: var(--sq-size); height: var(--sq-size); pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%) scale(1.1); opacity: 0.9;
+            background-size: contain; background-repeat: no-repeat; background-position: center;
+            display: flex; align-items: center; justify-content: center; 
+            font-size: calc(var(--sq-size) * 0.6);
+        }
+
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+        #ui-tooltip {
+            position: fixed; pointer-events: none; z-index: 2000;
+            background: #222; padding: 8px 12px; border-radius: 8px;
+            border: 1px solid #f1c40f; color: #ecf0f1; font-size: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.8);
+            display: none; white-space: nowrap;
+        }
+
+        #forge-ui { 
+            position: absolute; bottom: 30px; right: 20px; 
+            background: rgba(0,0,0,0.8); border: 2px solid #e67e22; 
+            padding: 10px; border-radius: 10px; z-index: 155; display: none;
+            transition: bottom 0.3s;
+        }
+        
+        /* CONNECTION SCREEN */
+        #connection-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);
+            z-index: 3000; display: flex; justify-content: center; align-items: center;
+            transition: opacity 0.5s; padding: 20px; box-sizing: border-box;
+        }
+        #connection-card {
+            background: linear-gradient(145deg, #2c3e50, #1a252f);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 30px; border-radius: 25px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            text-align: center; width: 100%; max-width: 350px;
+        }
+        .id-display {
+            background: rgba(0,0,0,0.3); padding: 10px; border-radius: 10px;
+            margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;
+            border: 1px dashed #555;
+        }
+        .id-display strong { font-family: monospace; font-size: 1em; color: #00d2d3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+        #peer-id {
+            width: 100%; padding: 12px; background: rgba(255,255,255,0.05);
+            border: 2px solid #555; border-radius: 12px; color: white;
+            font-size: 1em; text-align: center; box-sizing: border-box; margin-bottom: 20px;
+        }
+        .connect-btn { width: 100%; padding: 12px; font-size: 1.1em; background: linear-gradient(90deg, #f39c12, #d35400); }
+    </style>
+</head>
+<body>
+
+<div id="ui-tooltip"></div>
+
+<div id="toggle-build-btn" onclick="toggleBuildMode()" title="Режим строительства">🔨</div>
+
+<div id="forge-ui">
+    <button onclick="useForge()" style="background: #e67e22;">⚒️ КОВАТЬ (2мет, 2уг)</button>
+</div>
+
+<div id="academy-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h2 style="color: #f1c40f; margin:0;">ВЕРБОВКА (1 ОД)</h2>
+        <div style="margin-bottom: 15px;">
+            <div style="color:white; font-size:0.8em; margin-bottom:5px;">СТАНДАРТ (2 Бумаги 📜)</div>
+            <div class="promo-options" id="acad-std-options"></div>
+        </div>
+        <div id="acad-elite-section" class="hidden">
+            <div style="color:gold; font-size:0.8em; margin-bottom:5px;">ЭЛИТА (5 Бумаги 📜)</div>
+            <div class="promo-options" id="acad-elite-options"></div>
+        </div>
+        <button onclick="closeModal('academy-modal')" style="margin-top:20px; background:#c0392b;">ОТМЕНА</button>
+    </div>
+</div>
+
+<div id="promotion-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h2 style="color: #f1c40f; margin:0;">ВЫБЕРИ СУДЬБУ</h2>
+        <div class="promo-options" id="promo-options-container"></div>
+    </div>
+</div>
+
+<div id="victory-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <div id="victory-title" style="font-size:2.5em; font-weight:bold; margin-bottom:20px;"></div>
+        <button onclick="location.reload()" style="font-size: 1.2em; padding: 10px 30px;">ЕЩЁ РАЗ</button>
+    </div>
+</div>
+
+<div id="connection-overlay">
+    <div id="connection-card">
+        <div class="conn-title" style="font-size: 1.8em; margin-bottom: 20px; color: #f1c40f;">CHESS RTS</div>
+        
+        <div class="id-display">
+            <span>ТВОЙ ID:</span>
+            <strong id="my-id">...</strong>
+            <button onclick="copyId()" style="background:none; border:none; font-size:1.2em; cursor:pointer;">📋</button>
+        </div>
+        
+        <input type="text" id="peer-id" placeholder="ID друга">
+        <button class="connect-btn" onclick="connectToPeer()">ПОДКЛЮЧИТЬСЯ ⚔️</button>
+        <div id="conn-status" style="margin-top:10px; font-size:0.8em; color:#aaa;"></div>
+    </div>
+</div>
+
+<div class="ui">
+    <div id="status">ОЖИДАНИЕ...</div>
+    
+    <div id="resource-panel">
+        <div class="res-item res-wood"><span>🪵</span> <span id="res-wood-val">0</span>/5</div>
+        <div class="res-item res-stone"><span>🧱</span> <span id="res-stone-val">0</span>/5</div>
+        <div class="res-item res-metal"><span>⛓️</span> <span id="res-metal-val">0</span>/5</div>
+        <div class="res-item res-cedar"><span>🌲</span> <span id="res-cedar-val">0</span>/5</div>
+        <div class="res-item res-paper"><span>📜</span> <span id="res-paper-val">0</span>/5</div>
+        <div class="res-item res-food"><span>🍞</span> <span id="res-food-val">0</span>/5</div>
+        <div class="res-item res-gem"><span>💎</span> <span id="res-gem-val">0</span>/5</div>
+        <div class="res-item res-coal"><span>⚫</span> <span id="res-coal-val">0</span>/5</div>
+        <div class="res-item res-poly"><span>🧪</span> <span id="res-poly-val">0</span>/5</div>
+    </div>
+
+    <button id="btn-apogee" onclick="activateApogee()" style="display:none; background: linear-gradient(135deg, #8e44ad, #c0392b); margin-top:5px;">☄️ АПОГЕЙ</button>
+</div>
+
+<div id="game-layout">
+    <div id="build-menu-container">
+        <div class="menu-tabs">
+            <div class="tab-btn active" id="tab-btn-build" onclick="switchTab('build')">СТРОЙ</div>
+            <div class="tab-btn" id="tab-btn-upgrade" onclick="switchTab('upgrade')">УЛУЧШ</div>
+            <div class="tab-btn" id="tab-btn-elite" onclick="switchTab('elite')">ЭЛИТА</div>
+        </div>
+        
+        <div id="build-list">
+            <div class="build-group group-build active">
+                <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')" style="border-color: #e74c3c; background: rgba(231, 76, 60, 0.1);">
+                    <span class="icon">🧨</span>
+                </div>
+                
+                <div id="btn-build-hq" class="build-item t1-item" data-type="hq" data-label="ШТАБ (Лимит 1)" data-cost="4к, 2д | 1 ОД" onpointerdown="onSidebarPointerDown(event, 'hq')">
+                    <span class="icon">🏰</span>
+                </div>
+                <div class="build-item t1-item" data-type="fortress" data-label="СТЕНА (2 ХП)" data-cost="4 Камня | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress')">
+                    <span class="icon">🧱</span>
+                </div>
+                <div class="build-item t1-item" data-type="camp" data-label="ЛАГЕРЬ (Лимит 1)" data-cost="3д, 1од | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'camp')">
+                    <span class="icon">⛺</span>
+                </div>
+                <div class="build-item t1-item" data-type="lumber" data-label="ЛЕСОПОВАЛ (Лимит 2)" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber')">
+                    <span class="icon">🪓</span>
+                </div>
+                <div class="build-item t1-item" data-type="mine" data-label="РУДНИК (Лимит 2)" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'mine')">
+                    <span class="icon">⛏️</span>
+                </div>
+                <div class="build-item t1-item" data-type="farm" data-label="ФЕРМА (Лимит 2)" data-cost="2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'farm')">
+                    <span class="icon">🌾</span>
+                </div>
+                <div class="build-item t1-item" data-type="academy" data-label="АКАДЕМИЯ (Лимит 1)" data-cost="2к, 2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy')">
+                    <span class="icon">🎓</span>
+                </div>
+                <div class="build-item t1-item" data-type="papermill" data-label="ПЕЧАТНЯ (Лимит 1)" data-cost="2к, 2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'papermill')">
+                    <span class="icon">📜</span>
+                </div>
+            </div>
+
+            <div class="build-group group-upgrade">
+                <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')" style="border-color: #e74c3c; background: rgba(231, 76, 60, 0.1);">
+                    <span class="icon">🧨</span>
+                </div>
+
+                <div class="build-item t2-item" data-type="lumber_t2" data-label="АПГРЕЙД: ЛЕСОПИЛКА T2" data-cost="4д, 2к | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t2')">
+                    <span class="icon">🌲</span>
+                </div>
+                <div class="build-item t2-item" data-type="mine_t2" data-label="АПГРЕЙД: ШАХТА T2" data-cost="4к, 2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t2')">
+                    <span class="icon">🏗️</span>
+                </div>
+                <div class="build-item t2-item" data-type="academy_t2" data-label="АПГРЕЙД: УНИВЕРСИТЕТ" data-cost="2к, 2д, 2кедр, 2мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy_t2')">
+                    <span class="icon">🏛️</span>
+                </div>
+                <div class="build-item t2-item" data-type="fortress_t2" data-label="АПГРЕЙД: БАСТИОН (4 ХП)" data-cost="4к, 2мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t2')">
+                    <span class="icon">🛡️</span>
+                </div>
+                <div class="build-item t2-item" data-type="furnace" data-label="ПЕЧЬ (1 Кедр -> 1 Уголь)" data-cost="3к, 1мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'furnace')">
+                    <span class="icon">🔥</span>
+                </div>
+            </div>
+
+            <div class="build-group group-elite">
+                <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')" style="border-color: #e74c3c; background: rgba(231, 76, 60, 0.1);">
+                    <span class="icon">🧨</span>
+                </div>
+
+                <div class="build-item t3-item" data-type="lumber_t3" data-label="ЗАВОД ПОЛИМЕРОВ" data-cost="4д, 2к, 2мет, 2кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t3')">
+                    <span class="icon">🧬</span>
+                </div>
+                <div class="build-item t3-item" data-type="mine_t3" data-label="АЛМАЗНЫЙ БУР" data-cost="2д, 4к, 2мет, 2кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t3')">
+                    <span class="icon">💎</span>
+                </div>
+                <div class="build-item t3-item" data-type="fortress_t3" data-label="АПГРЕЙД: ЦИТАДЕЛЬ (8 ХП)" data-cost="5к, 5мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t3')">
+                    <span class="icon">🏯</span>
+                </div>
+                <div class="build-item t3-item" data-type="forge" data-label="КУЗНЯ БОГОВ" data-cost="5д, 5мет, 5уг, 5алм | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'forge')">
+                    <span class="icon">⚒️</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="board-wrapper">
+        <div id="board"></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script>
+    /* --- CONSTANTS & CONFIG --- */
+    const PIECE_URLS = {
+        wk: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+        wq: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        wr: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        wb: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        wn: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        wp: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+        bk: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+        bq: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        br: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        bb: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        bn: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        bp: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
+    };
+
+    const BUILDINGS = ['hq', 'camp', 'academy', 'academy_t2', 'lumber', 'lumber_t2', 'lumber_t3', 'mine', 'mine_t2', 'mine_t3', 'papermill', 'farm', 'house', 'fortress', 'fortress_t2', 'fortress_t3', 'forge', 'furnace'];
+    const T2_BUILDINGS = ['academy_t2', 'lumber_t2', 'mine_t2', 'fortress_t2', 'furnace'];
+    const T3_BUILDINGS = ['lumber_t3', 'mine_t3', 'fortress_t3', 'forge']; 
+    
+    // Обновленные иконки для скрипта
+    const BUILDING_ICONS = { 
+        hq: '🏰', camp: '⛺', 
+        academy: '🎓', academy_t2: '🏛️', 
+        lumber: '🪓', lumber_t2: '🌲', lumber_t3: '🧬', 
+        mine: '⛏️', mine_t2: '🏗️', mine_t3: '💎',
+        papermill: '📜', farm: '🌾',
+        house: '🏠',
+        demolish: '🧨',
+        fortress: '🧱', fortress_t2: '🛡️', fortress_t3: '🏯',
+        forge: '⚒️',
+        furnace: '🔥'
+    };
+
+    const BUILDING_COSTS = {
+        hq: { wood: 2, stone: 4, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        camp: { wood: 3, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        lumber: { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        mine: { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        papermill: { wood: 2, stone: 2, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        academy: { wood: 2, stone: 2, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        farm: { wood: 2, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        lumber_t2: { wood: 4, stone: 2, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        mine_t2: { wood: 2, stone: 4, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        academy_t2: { wood: 2, stone: 2, metal: 2, cedar: 2, paper: 0, food: 0, gem: 0, coal: 0 },
+        furnace: { wood: 0, stone: 3, metal: 1, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        lumber_t3: { wood: 4, stone: 2, metal: 2, cedar: 2, paper: 0, food: 0, gem: 0, coal: 0 },
+        mine_t3: { wood: 2, stone: 4, metal: 2, cedar: 2, paper: 0, food: 0, gem: 0, coal: 0 },
+        fortress: { wood: 0, stone: 4, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        fortress_t2: { wood: 0, stone: 4, metal: 2, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        fortress_t3: { wood: 0, stone: 5, metal: 5, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        forge: { wood: 5, stone: 0, metal: 5, cedar: 0, paper: 0, food: 0, gem: 5, coal: 5 },
+        demolish: { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 }
+    };
+
+    const BUILDING_LIMITS = {
+        hq: 1, camp: 1, academy: 1, papermill: 1,
+        lumber: 2, mine: 2, farm: 2, fortress: 4, forge: 1, furnace: 2
+    };
+    
+    const FORTRESS_HP = { fortress: 2, fortress_t2: 4, fortress_t3: 8 };
+
+    let peer = new Peer();
+    let conn = null;
+    let playerColor = null;
+    let isBuildMode = false;
+    let actionsLeft = 0;
+    let gameOver = false;
+    let isExpanded = false; 
+    let expansionAnimationDone = false;
+    let rows = 8, cols = 8;
+    let selectedPiece = null; 
+    
+    let myResources = { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0, polymer: 0 };
+    let state = Array(8).fill(null).map(() => Array(8).fill(null));
+
+    let pendingMove = null;
+    let pendingAcademy = null; 
+    
+    const dragState = {
+        started: false, cloneEl: null, from: null, isBuildingDrag: false,
+        pointerId: null, startX: 0, startY: 0, lastHover: null
+    };
+
+    function toggleBuildMode() {
+        if(actionsLeft <= 0 && !isBuildMode) return; 
+        isBuildMode = !isBuildMode;
+        const btn = document.getElementById('toggle-build-btn');
+        btn.innerHTML = isBuildMode ? '⚔️' : '🔨';
+        updateUI(); render();
+    }
+
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`tab-btn-${tab}`).classList.add('active');
+        document.querySelectorAll('.build-group').forEach(g => g.classList.remove('active'));
+        document.querySelector(`.group-${tab}`).classList.add('active');
+    }
+
+    function copyId() {
+        const id = document.getElementById('my-id').innerText;
+        if (id && id !== '...') {
+            navigator.clipboard.writeText(id).then(() => {
+                alert("ID скопирован!");
+            }).catch(err => alert("Ошибка: " + err));
+        }
+    }
+
+    /* --- TOOLTIP LOGIC --- */
+    const tooltipEl = document.getElementById('ui-tooltip');
+    
+    document.querySelectorAll('.build-item').forEach(item => {
+        item.addEventListener('mouseenter', e => showTooltip(e, item));
+        item.addEventListener('mousemove', moveTooltip);
+        item.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+        
+        item.addEventListener('touchstart', (e) => {
+            showTooltip(e.touches[0], item);
+            setTimeout(() => tooltipEl.style.display = 'none', 3000);
+        }, {passive: true});
+    });
+
+    function showTooltip(e, item) {
+        const label = item.getAttribute('data-label');
+        const cost = item.getAttribute('data-cost');
+        if(label) {
+            tooltipEl.style.display = 'block';
+            tooltipEl.innerHTML = `<strong>${label}</strong><br><span style="color:#f1c40f">${cost}</span>`;
+            moveTooltip(e);
+        }
+    }
+
+    function moveTooltip(e) {
+        const x = e.clientX || e.pageX;
+        const y = e.clientY || e.pageY;
+        tooltipEl.style.left = (x + 10) + 'px';
+        tooltipEl.style.top = (y - 50) + 'px'; 
+    }
+
+    function initBoard() {
+        const layout = ['r','n','b','q','k','b','n','r'];
+        for(let i=0; i<8; i++) {
+            state[0][i] = { type: layout[i], color: 'b', moved: false, armor: 0 };
+            state[1][i] = { type: 'p', color: 'b', moved: false, armor: 0 };
+            state[6][i] = { type: 'p', color: 'w', moved: false, armor: 0 };
+            state[7][i] = { type: layout[i], color: 'w', moved: false, armor: 0 };
+        }
+        render();
+    }
+
+    function isFog(r, c) {
+        if (!isExpanded) return false;
+        return (r >= 4 && r <= 11);
+    }
+    
+    function isUpgradedUnit(piece) {
+        return piece && piece.type.endsWith('_2');
+    }
+
+    function render() {
+        const boardEl = document.getElementById('board');
+        boardEl.innerHTML = '';
+        document.documentElement.style.setProperty('--rows', rows);
+        document.documentElement.style.setProperty('--cols', cols);
+
+        if (isExpanded) boardEl.classList.add('expanded');
+        
+        const rangeR = playerColor === 'b' ? [...Array(rows).keys()].reverse() : [...Array(rows).keys()];
+        const rangeC = [...Array(cols).keys()];
+
+        const forgeUI = document.getElementById('forge-ui');
+        let forgeActive = false;
+        
+        rangeR.forEach(r => {
+            rangeC.forEach(c => {
+                const square = document.createElement('div');
+                let isDark = (r + c) % 2 !== 0;
+                square.className = `square ${isDark ? 'dark' : 'light'}`;
+                if (isFog(r, c)) square.classList.add('fog');
+                
+                if (isExpanded && r >= 4 && r < 12 && !expansionAnimationDone) { 
+                    square.classList.add('growing');
+                    square.style.animationDelay = `${Math.abs(r-7.5)*0.05}s`;
+                }
+
+                const p = state[r][c];
+                
+                if(p) {
+                    const pDiv = document.createElement('div');
+                    
+                    if (p.type === 'forge') {
+                        pDiv.className = 'special-piece t3-building';
+                        pDiv.innerHTML = BUILDING_ICONS['forge'];
+                        pDiv.style.textShadow = '0 0 10px #e67e22';
+                        square.appendChild(pDiv);
+                    }
+                    else if (BUILDINGS.includes(p.type)) {
+                        pDiv.className = 'special-piece';
+                        if (T2_BUILDINGS.includes(p.type)) pDiv.classList.add('t2-building');
+                        if (T3_BUILDINGS.includes(p.type)) pDiv.classList.add('t3-building');
+                        if (p.type === 'house') pDiv.classList.add('settlement');
+                        
+                        pDiv.innerHTML = BUILDING_ICONS[p.type] || '?';
+                        
+                        if (p.type.startsWith('fortress')) {
+                            const max = FORTRESS_HP[p.type] || 2;
+                            const cur = p.hp !== undefined ? p.hp : max;
+                            const bar = document.createElement('div');
+                            bar.className = 'hp-bar';
+                            const fill = document.createElement('div');
+                            fill.className = 'hp-val';
+                            fill.style.width = (cur / max * 100) + '%';
+                            bar.appendChild(fill);
+                            pDiv.appendChild(bar);
+                        }
+
+                        let glow = 'rgba(0,0,0,0.5)';
+                        if (p.color === 'w') glow = '#fff';
+                        else if (p.color === 'b') glow = '#000';
+                        else if (p.color === 'n') glow = '#e74c3c';
+
+                        pDiv.style.textShadow = `0 0 10px ${glow}`;
+                        
+                        if (p.type === 'camp' && p.color === playerColor) {
+                            pDiv.style.cursor = 'pointer';
+                            pDiv.addEventListener('pointerdown', e => onCampClick(e, r, c));
+                        }
+                        square.appendChild(pDiv);
+                    } else {
+                        pDiv.className = 'piece';
+                        const baseType = p.type.replace('_2', '');
+                        pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + baseType]})`;
+                        if (isUpgradedUnit(p)) pDiv.classList.add('upgraded');
+                        
+                        if (p.armor > 0) {
+                            const badge = document.createElement('div');
+                            badge.className = 'armor-badge';
+                            badge.innerText = p.armor;
+                            pDiv.appendChild(badge);
+                        }
+                        
+                        pDiv.addEventListener('pointerdown', e => onPiecePointerDown(e, r, c));
+                        square.appendChild(pDiv);
+
+                        if (p.onForge && p.color === playerColor) {
+                            selectedPiece = { r, c }; 
+                            forgeActive = true;
+                            square.style.boxShadow = "inset 0 0 15px #e67e22";
+                        }
+                    }
+                } 
+                boardEl.appendChild(square);
+            });
+        });
+
+        forgeUI.style.display = forgeActive ? 'block' : 'none';
+        
+        const els = {
+            wood: document.getElementById('res-wood-val'),
+            stone: document.getElementById('res-stone-val'),
+            metal: document.getElementById('res-metal-val'),
+            cedar: document.getElementById('res-cedar-val'),
+            paper: document.getElementById('res-paper-val'),
+            food: document.getElementById('res-food-val'),
+            gem: document.getElementById('res-gem-val'),
+            coal: document.getElementById('res-coal-val'),
+            polymer: document.getElementById('res-poly-val')
+        };
+        
+        for (let k in els) {
+            if(els[k]) {
+                els[k].innerText = myResources[k];
+                const parent = els[k].parentElement;
+                if (myResources[k] >= 5) parent.classList.add('limit-reached');
+                else parent.classList.remove('limit-reached');
+            }
+        }
+    }
+
+    function useForge() {
+        if (!selectedPiece) return;
+        const p = state[selectedPiece.r][selectedPiece.c];
+        if (!p || !p.onForge) return;
+        
+        if (myResources.metal < 2 || myResources.coal < 2) {
+            alert("Нужно 2 Металла и 2 Угля!");
+            return;
+        }
+
+        myResources.metal -= 2;
+        myResources.coal -= 2;
+        p.armor = (p.armor || 0) + 1;
+        
+        conn.send({ type: 'forge_armor', r: selectedPiece.r, c: selectedPiece.c });
+        render(); updateUI();
+    }
+
+    function activateApogee() {
+        if (isExpanded) return;
+        document.getElementById('btn-apogee').style.display = 'none';
+        conn.send({ type: 'apogee_trigger' });
+        triggerExpansion();
+    }
+
+    function triggerExpansion() {
+        if (isExpanded) return;
+        document.getElementById('btn-apogee').style.display = 'none';
+        
+        const newState = Array(16).fill(null).map(() => Array(8).fill(null));
+        
+        for(let r=0; r<8; r++) {
+            for(let c=0; c<8; c++) {
+                if (state[r][c]) {
+                    if (r < 4) newState[r][c] = state[r][c];
+                    else newState[r + 8][c] = state[r][c]; 
+                }
+            }
+        }
+        
+        state = newState; rows = 16; cols = 8;
+        isExpanded = true;
+        render(); updateUI();
+        setTimeout(() => { expansionAnimationDone = true; }, 1500);
+    }
+
+    function hasSpecial(color, type) { return state.flat().some(p => p && p.type === type && p.color === color); }
+    
+    function getBuildingCount(baseType) {
+        let count = 0;
+        state.flat().forEach(p => {
+            if (p && p.color === playerColor) {
+                const t = p.type;
+                if (t === baseType || t.startsWith(baseType + '_')) count++;
+                if (baseType === 'forge' && p.onForge) count++;
+            }
+        });
+        return count;
+    }
+
+    function buildSomething(r, c, type) {
+        let apCost = 2;
+        if (type === 'lumber' || type === 'mine' || type === 'demolish' || type === 'hq') apCost = 1;
+
+        if (type === 'demolish') {
+            if (!state[r][c] || state[r][c].color !== playerColor) { alert("Нельзя сносить."); return; }
+            if (actionsLeft < apCost) { alert(`Нужно ${apCost} ОД.`); return; }
+            
+            if (state[r][c].onForge) {
+                state[r][c].onForge = false;
+            } else {
+                state[r][c] = null;
+            }
+            
+            actionsLeft -= apCost;
+            conn.send({ type: 'demolish', r, c, isLast: (actionsLeft<=0) });
+            updateUI(); render();
+            return;
+        }
+
+        const costs = BUILDING_COSTS[type];
+        
+        if (type.endsWith('_t2') || type.endsWith('_t3')) {
+            let baseType = '';
+            let requiredType = '';
+            
+            if (type.endsWith('_t2')) {
+                baseType = type.replace('_t2', '');
+                requiredType = baseType; 
+            } else {
+                baseType = type.replace('_t3', '');
+                requiredType = baseType + '_t2'; 
+            }
+            
+            const target = state[r][c];
+            if (!target || target.type !== requiredType || target.color !== playerColor) {
+                alert(`Улучшение ${type} можно ставить только на ${requiredType}!`);
+                return;
+            }
+            if (actionsLeft < apCost) return alert(`Нужно ${apCost} ОД.`);
+            if (!checkResources(costs)) return;
+            
+            payResources(costs);
+            state[r][c].type = type;
+            if (type.startsWith('fortress')) state[r][c].hp = FORTRESS_HP[type];
+            
+            actionsLeft -= apCost;
+            conn.send({ type: 'upgrade', r, c, newType: type, isLast: (actionsLeft<=0) });
+            updateUI(); render();
+            return;
+        }
+
+        if (state[r][c]) return; 
+        if (actionsLeft < apCost) return alert(`Нужно ${apCost} ОД.`);
+        
+        const limitType = type;
+        if (BUILDING_LIMITS[limitType] && getBuildingCount(limitType) >= BUILDING_LIMITS[limitType]) {
+            alert(`Лимит построек (${type}) достигнут!`);
+            return;
+        }
+
+        if (!checkResources(costs)) return;
+
+        payResources(costs);
+        actionsLeft -= apCost;
+        
+        let newObj = { type: type, color: playerColor };
+        if (type === 'fortress') newObj.hp = FORTRESS_HP['fortress'];
+        
+        state[r][c] = newObj;
+        
+        conn.send({ type: 'build', r, c, buildType: type, isLast: (actionsLeft<=0) });
+        updateUI(); render(); 
+    }
+
+    function checkResources(cost) {
+        if (myResources.wood < cost.wood || myResources.stone < cost.stone || 
+            myResources.metal < cost.metal || myResources.cedar < cost.cedar ||
+            myResources.paper < cost.paper || myResources.gem < cost.gem || 
+            myResources.coal < cost.coal) {
+            alert(`Не хватает ресурсов!`);
+            return false;
+        }
+        return true;
+    }
+
+    function payResources(cost) {
+        myResources.wood -= cost.wood;
+        myResources.stone -= cost.stone;
+        myResources.metal -= cost.metal;
+        myResources.cedar -= cost.cedar;
+        myResources.paper -= cost.paper;
+        myResources.gem -= cost.gem;
+        myResources.coal -= cost.coal;
+    }
+
+    function collectResources() {
+        let produced = { w:0, s:0, m:0, c:0, p:0, f:0, g:0, cl:0, poly:0 };
+        
+        for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                const p = state[r][c];
+                if (p && p.color === playerColor) {
+                    if (p.type === 'mine') { if (myResources.stone < 5) produced.s++; }
+                    if (p.type === 'mine_t2') { 
+                        if (myResources.stone < 5) produced.s++; 
+                        if (myResources.metal < 5) produced.m++; 
+                    }
+                    if (p.type === 'mine_t3') {
+                        if (myResources.stone < 5) produced.s++;
+                        if (myResources.metal < 5) produced.m++;
+                        if (myResources.gem < 5) produced.g++;
+                    }
+
+                    if (p.type === 'lumber') { if (myResources.wood < 5) produced.w++; }
+                    if (p.type === 'lumber_t2') { 
+                        if (myResources.wood < 5) produced.w++; 
+                        if (myResources.cedar < 5) produced.c++; 
+                    }
+                    if (p.type === 'lumber_t3') {
+                        if (myResources.wood < 5) produced.w++;
+                        if (myResources.cedar < 5) produced.c++;
+                        if (myResources.polymer < 5) produced.poly++;
+                    }
+
+                    if (p.type === 'furnace') {
+                         if (myResources.cedar > 0 && myResources.coal < 5) {
+                             myResources.cedar--;
+                             produced.cl++;
+                         }
+                    }
+
+                    if (p.type === 'farm') { if (myResources.food < 5) produced.f++; }
+                    if (p.type === 'papermill') {
+                        if (myResources.wood > 0 && myResources.paper < 5) {
+                            myResources.wood--; 
+                            produced.p++;
+                        }
+                    }
+                }
+            }
+        }
+        
+        myResources.wood = Math.min(5, myResources.wood + produced.w);
+        myResources.stone = Math.min(5, myResources.stone + produced.s);
+        myResources.metal = Math.min(5, myResources.metal + produced.m);
+        myResources.cedar = Math.min(5, myResources.cedar + produced.c);
+        myResources.paper = Math.min(5, myResources.paper + produced.p);
+        myResources.food = Math.min(5, myResources.food + produced.f);
+        myResources.gem = Math.min(5, myResources.gem + produced.g);
+        myResources.coal = Math.min(5, myResources.coal + produced.cl);
+        myResources.polymer = Math.min(5, myResources.polymer + produced.poly);
+    }
+
+    function onCampClick(e, r, c) {
+        e.stopPropagation();
+        if (isBuildMode || actionsLeft < 1) return;
+        
+        if (confirm("Нанять пешку? (Стоимость: 2 Еды, 1 ОД)")) {
+            if (myResources.food < 2) {
+                alert("Не хватает еды!");
+                return;
+            }
+            const dir = playerColor === 'w' ? -1 : 1;
+            const targetR = r + dir;
+            if (targetR < 0 || targetR >= rows || state[targetR][c]) {
+                alert("Место высадки занято!");
+                return;
+            }
+            myResources.food -= 2;
+            actionsLeft--;
+            state[targetR][c] = { type: 'p', color: playerColor, moved: true, armor: 0 };
+            conn.send({ type: 'transform', from: {r: r, c: c}, to: {r: targetR, c: c}, newType: 'p', isLast: (actionsLeft <= 0) });
+            updateUI(); render();
+        }
+    }
+
+    function isValidMove(fr, fc, tr, tc) {
+        if (tr < 0 || tr >= rows || tc < 0 || tc >= cols) return false;
+
+        const p = state[fr][fc]; 
+        if (!p) return false;
+
+        if (p.type !== 'n' && isExpanded) {
+            const fromFog = isFog(fr, fc);
+            const toFog = isFog(tr, tc);
+            if (fromFog !== toFog) {
+                 // Ограничение тумана: нельзя входить/выходить без разведки (условно)
+            }
+        }
+
+        const dest = state[tr][tc];
+
+        if (dest && dest.type === 'forge') return true;
+
+        if (dest && dest.color === p.color) {
+            if ((dest.type === 'academy' || dest.type === 'academy_t2') && p.type === 'p') {
+                return true; 
+            }
+            return false; 
+        }
+
+        if (dest && isUpgradedUnit(dest) && p.type === 'p') return false;
+        
+        const dr = tr - fr, dc = tc - fc; 
+        const adr = Math.abs(dr), adc = Math.abs(dc);
+        const baseType = p.type.replace('_2', '');
+
+        if (['b','r','q'].includes(baseType)) {
+            if (!isPathClear(fr, fc, tr, tc)) return false;
+        }
+
+        switch(baseType) {
+            case 'p':
+                const dir = p.color === 'w' ? -1 : 1;
+                if (dest && (dest.type === 'academy' || dest.type === 'academy_t2') && dest.color === p.color) return true;
+                if (dc === 0 && !dest && dr === dir) return true;
+                if (dc === 0 && !dest && !p.moved && dr === 2 * dir) {
+                    if (!state[fr + dir][fc]) return true;
+                }
+                if (adc === 1 && dr === dir && dest && dest.color !== p.color) return true;
+                return false;
+            case 'n': return (adr === 2 && adc === 1) || (adr === 1 && adc === 2);
+            case 'b': return adr === adc; 
+            case 'r': return (dr === 0 || dc === 0); 
+            case 'q': return (adr === adc || dr === 0 || dc === 0); 
+            case 'k': return (adr <= 1 && adc <= 1); 
+        }
+        return false;
+    }
+
+    function isPathClear(fr, fc, tr, tc) {
+        const stepR = Math.sign(tr - fr), stepC = Math.sign(tc - fc);
+        let curR = fr + stepR, curC = fc + stepC;
+        while (curR !== tr || curC !== tc) { 
+            if (state[curR][curC]) return false; 
+            curR += stepR; curC += stepC; 
+        }
+        return true;
+    }
+
+    function movePiece(fr, fc, tr, tc) {
+        const piece = state[fr][fc];
+        const dest = state[tr][tc];
+
+        if (dest && (dest.type === 'academy' || dest.type === 'academy_t2') && dest.color === piece.color && piece.type === 'p') {
+            openAcademyModal(fr, fc, tr, tc, dest.type === 'academy_t2');
+            return;
+        }
+
+        if (dest && dest.type === 'forge') {
+            if (dest.color === piece.color || !dest.color) { 
+                if (piece.onForge) {
+                    state[fr][fc] = { type: 'forge', color: piece.color };
+                } else {
+                    state[fr][fc] = null;
+                }
+                piece.onForge = true;
+                piece.moved = true;
+                state[tr][tc] = piece;
+
+                actionsLeft--;
+                conn.send({ type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, isLast: (actionsLeft<=0), onForgeEnter: true });
+                updateUI(); render();
+                return;
+            }
+        }
+
+        if (piece.onForge) {
+            state[fr][fc] = { type: 'forge', color: piece.color };
+            piece.onForge = false;
+        } else {
+            state[fr][fc] = null;
+        }
+
+        if (dest && dest.color !== piece.color) {
+            if (dest.type.startsWith('fortress')) {
+                if (dest.hp > 1) {
+                    dest.hp--;
+                    if (state[fr][fc] && state[fr][fc].type === 'forge') {
+                        state[fr][fc] = piece; piece.onForge = true;
+                    } else {
+                        state[fr][fc] = piece; 
+                    }
+                    actionsLeft--;
+                    conn.send({ type: 'attack_hit', r: tr, c: tc, hp: dest.hp, isLast: (actionsLeft<=0) });
+                    updateUI(); render();
+                    return;
+                }
+            }
+            if (dest.armor > 0) {
+                dest.armor--;
+                if (state[fr][fc] && state[fr][fc].type === 'forge') {
+                    state[fr][fc] = piece; piece.onForge = true;
+                } else {
+                    state[fr][fc] = piece;
+                }
+                actionsLeft--;
+                conn.send({ type: 'attack_armor', r: tr, c: tc, armor: dest.armor, isLast: (actionsLeft<=0) });
+                updateUI(); render();
+                return;
+            }
+        }
+
+        let isWinMove = (dest && dest.type === 'k');
+        if (isWinMove) endGame(true);
+
+        let costsAP = true;
+        if (isUpgradedUnit(piece)) {
+            if (!piece.freeMoveUsed) {
+                costsAP = false;
+                piece.freeMoveUsed = true; 
+            }
+        }
+
+        state[tr][tc] = piece; 
+        piece.moved = true; 
+        
+        if (costsAP) actionsLeft--;
+        
+        const endRow = playerColor === 'w' ? 0 : (rows - 1);
+        if (piece.type === 'p' && tr === endRow && !isWinMove) {
+            showPromotionModal(fr, fc, tr, tc); 
+            return; 
+        }
+
+        conn.send({ 
+            type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, 
+            isLast: (actionsLeft <= 0), win: isWinMove, 
+            freeMoveUsed: !costsAP 
+        });
+        updateUI(); render();
+    }
+
+    function openAcademyModal(fr, fc, tr, tc, isT2) {
+        pendingAcademy = { from: {r:fr, c:fc}, acad: {r:tr, c:tc} };
+        const modal = document.getElementById('academy-modal');
+        const stdContainer = document.getElementById('acad-std-options');
+        const eliteContainer = document.getElementById('acad-elite-options');
+        const eliteSection = document.getElementById('acad-elite-section');
+
+        stdContainer.innerHTML = '';
+        eliteContainer.innerHTML = '';
+
+        const units = [{t:'n', i:'♞'}, {t:'b', i:'♝'}, {t:'r', i:'♜'}];
+
+        units.forEach(u => {
+            const btn = document.createElement('div');
+            btn.className = 'promo-btn';
+            btn.innerHTML = `${u.i}<span class="cost">2 Бумаги</span>`;
+            btn.onclick = () => finishAcademyRecruit(u.t, 2);
+            stdContainer.appendChild(btn);
+        });
+
+        if (isT2) {
+            eliteSection.classList.remove('hidden');
+            units.forEach(u => {
+                const btn = document.createElement('div');
+                btn.className = 'promo-btn upgraded-offer';
+                btn.innerHTML = `${u.i}<span class="cost" style="color:gold">5 Бумаги</span>`;
+                btn.onclick = () => finishAcademyRecruit(u.t + '_2', 5); 
+                eliteContainer.appendChild(btn);
+            });
+        } else {
+            eliteSection.classList.add('hidden');
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    function finishAcademyRecruit(newType, paperCost) {
+        if (actionsLeft < 1) {
+             alert("Нет ОД для обучения!");
+             return;
+        }
+
+        if (myResources.paper < paperCost) {
+            alert(`Не хватает Бумаги (Нужно ${paperCost})!`);
+            return;
+        }
+        myResources.paper -= paperCost;
+
+        const { from, acad } = pendingAcademy;
+        const dir = playerColor === 'w' ? -1 : 1;
+        const spawnR = acad.r + dir;
+        const spawnC = acad.c;
+
+        if (spawnR < 0 || spawnR >= rows || state[spawnR][spawnC]) {
+            alert("Выход из Академии заблокирован!");
+            closeModal('academy-modal');
+            return;
+        }
+
+        state[from.r][from.c] = null;
+        state[spawnR][spawnC] = { type: newType, color: playerColor, moved: true, freeMoveUsed: false, armor: 0 };
+        
+        actionsLeft--; 
+        conn.send({ 
+            type: 'transform', from: from, to: {r:spawnR, c:spawnC}, 
+            newType: newType, isLast: (actionsLeft <= 0) 
+        });
+        
+        closeModal('academy-modal');
+        updateUI(); render();
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function showPromotionModal(fr, fc, tr, tc) {
+        pendingMove = { fr, fc, tr, tc };
+        const modal = document.getElementById('promotion-modal');
+        const container = document.getElementById('promo-options-container');
+        container.innerHTML = '';
+        [{t:'q', i:'♛'}, {t:'r', i:'♜'}, {t:'b', i:'♝'}, {t:'n', i:'♞'}].forEach(opt => {
+            const btn = document.createElement('div');
+            btn.className = 'promo-btn';
+            btn.innerHTML = opt.i;
+            btn.onclick = () => finishPromotion(opt.t);
+            container.appendChild(btn);
+        });
+        modal.classList.remove('hidden');
+    }
+
+    function finishPromotion(newType) {
+        document.getElementById('promotion-modal').classList.add('hidden');
+        const { fr, fc, tr, tc } = pendingMove;
+        state[tr][tc] = state[fr][fc]; state[tr][tc].type = newType; state[fr][fc] = null;
+        actionsLeft--;
+        conn.send({ type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, isLast: (actionsLeft <= 0), win: false, promoteTo: newType });
+        pendingMove = null; updateUI(); render();
+    }
+
+    function endGame(isWin) {
+        gameOver = true;
+        const modal = document.getElementById('victory-modal');
+        const title = document.getElementById('victory-title');
+        title.innerHTML = isWin ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ...';
+        title.style.color = isWin ? '#2ecc71' : '#e74c3c';
+        modal.classList.remove('hidden');
+    }
+
+    function updateUI() {
+        const statusEl = document.getElementById('status');
+        if (actionsLeft > 0) statusEl.textContent = `ТВОЙ ХОД (${actionsLeft} Д.)`;
+        else statusEl.textContent = "ХОД ПРОТИВНИКА...";
+        
+        if (isBuildMode) document.body.classList.add('build-mode');
+        else document.body.classList.remove('build-mode');
+        
+        const hasHQ = hasSpecial(playerColor, 'hq');
+        document.getElementById('btn-build-hq').classList.toggle('hidden-btn', hasHQ);
+
+        if (conn && !isExpanded && isBuildMode) document.getElementById('btn-apogee').style.display = 'block';
+    }
+
+    window.onkeydown = (e) => {
+        if ((e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'и') && actionsLeft > 0) {
+            toggleBuildMode();
+        }
+    };
+
+    peer.on('open', id => document.getElementById('my-id').textContent = id);
+    function connectToPeer() {
+        const id = document.getElementById('peer-id').value;
+        if(!id) return alert("Введите ID друга!");
+        document.getElementById('conn-status').innerText = "Подключение...";
+        conn = peer.connect(id); playerColor = 'b'; setupConn();
+    }
+    peer.on('connection', c => { conn = c; playerColor = 'w'; actionsLeft = 1; setupConn(); });
+
+    function setupConn() {
+        conn.on('open', () => {
+            document.getElementById('connection-overlay').style.opacity = '0';
+            setTimeout(() => document.getElementById('connection-overlay').classList.add('hidden'), 500);
+
+            if (!isExpanded) initBoard(); 
+            updateUI();
+            conn.on('data', d => {
+                if (d.type === 'move') {
+                    let movingPiece = state[d.from.r][d.from.c];
+                    if (movingPiece && movingPiece.onForge) {
+                         state[d.from.r][d.from.c] = { type: 'forge', color: movingPiece.color };
+                    } else {
+                         state[d.from.r][d.from.c] = null;
+                    }
+                    if (d.onForgeEnter) {
+                         let pObj = movingPiece || {type: 'p', color: (playerColor==='w'?'b':'w')}; 
+                         pObj.onForge = true;
+                         pObj.moved = true;
+                         if (d.promoteTo) pObj.type = d.promoteTo; 
+                         state[d.to.r][d.to.c] = pObj;
+                    } else {
+                         let pObj = movingPiece || { type: 'p', color: (playerColor==='w'?'b':'w') }; 
+                         pObj.moved = true;
+                         if (d.promoteTo) pObj.type = d.promoteTo;
+                         state[d.to.r][d.to.c] = pObj;
+                    }
+                    if (d.win) endGame(false);
+                } else if (d.type === 'attack_hit') {
+                    if (state[d.r][d.c]) state[d.r][d.c].hp = d.hp;
+                } else if (d.type === 'attack_armor') {
+                    if (state[d.r][d.c]) state[d.r][d.c].armor = d.armor;
+                } else if (d.type === 'forge_armor') {
+                    if (state[d.r][d.c]) state[d.r][d.c].armor = (state[d.r][d.c].armor || 0) + 1;
+                } else if (d.type === 'transform') {
+                    if (state[d.from.r][d.from.c] && state[d.from.r][d.from.c].type === 'p') {
+                        state[d.from.r][d.from.c] = null;
+                    } 
+                    state[d.to.r][d.to.c] = { type: d.newType, color: playerColor === 'w' ? 'b' : 'w', moved: true, armor: 0 };
+                } else if (d.type === 'build') {
+                    let obj = { type: d.buildType, color: playerColor === 'w' ? 'b' : 'w' };
+                    if (d.buildType === 'fortress') obj.hp = FORTRESS_HP['fortress'];
+                    state[d.r][d.c] = obj;
+                } else if (d.type === 'upgrade') {
+                    state[d.r][d.c].type = d.newType;
+                    if (d.newType.startsWith('fortress')) state[d.r][d.c].hp = FORTRESS_HP[d.newType];
+                } else if (d.type === 'demolish') {
+                    if (state[d.r][d.c] && state[d.r][d.c].onForge) {
+                        state[d.r][d.c].onForge = false;
+                    } else {
+                        state[d.r][d.c] = null;
+                    }
+                } else if (d.type === 'apogee_trigger') {
+                    triggerExpansion();
+                }
+
+                if (d.isLast) turnEndLogic();
+                render(); updateUI();
+            });
+        });
+    }
+
+    function turnEndLogic() {
+        actionsLeft = hasSpecial(playerColor, 'hq') ? 2 : 1; 
+        state.flat().forEach(p => { if (p) p.freeMoveUsed = false; });
+        collectResources();
+    }
+
+    function onPiecePointerDown(e, fr, fc) {
+        if (gameOver || !conn || actionsLeft <= 0 || isBuildMode) {
+             if (!isBuildMode && state[fr][fc] && state[fr][fc].onForge && state[fr][fc].color === playerColor) {
+                 selectedPiece = {r: fr, c: fc};
+                 render(); 
+             }
+             return;
+        }
+        if (state[fr][fc] && state[fr][fc].type === 'camp') return;
+        const p = state[fr][fc];
+        if (!p || p.color !== playerColor) return;
+        
+        selectedPiece = {r: fr, c: fc}; 
+        
+        dragState.isBuildingDrag = false;
+        dragState.from = { r: fr, c: fc };
+        const baseType = p.type.replace('_2', '');
+        initDrag(e, `url(${PIECE_URLS[p.color + baseType]})`);
+    }
+
+    function onSidebarPointerDown(e, type) {
+        if (gameOver || !conn || actionsLeft <= 0 || !isBuildMode) return;
+        dragState.isBuildingDrag = true;
+        dragState.from = { type: type };
+        initDrag(e, null, BUILDING_ICONS[type] || BUILDING_ICONS[type.replace('_t2','').replace('_t3','')]);
+    }
+
+    function initDrag(e, bgImage, icon) {
+        dragState.pointerId = e.pointerId;
+        dragState.startX = e.clientX; dragState.startY = e.clientY;
+        dragState.started = false;
+        
+        const clone = document.createElement('div');
+        clone.className = 'dragging-clone';
+        if (bgImage) clone.style.backgroundImage = bgImage;
+        if (icon) clone.innerHTML = icon;
+        dragState.cloneEl = clone;
+        
+        document.body.appendChild(dragState.cloneEl); 
+        dragState.cloneEl.style.left = `${e.clientX}px`;
+        dragState.cloneEl.style.top = `${e.clientY}px`;
+        dragState.cloneEl.style.display = 'none';
+
+        document.addEventListener('pointermove', onDocumentPointerMove);
+        document.addEventListener('pointerup', onDocumentPointerUp);
+        e.preventDefault();
+    }
+
+    function onDocumentPointerMove(e) {
+        if (e.pointerId !== dragState.pointerId) return;
+        
+        if (!dragState.started && Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY) > 5) {
+            dragState.started = true;
+            dragState.cloneEl.style.display = 'flex';
+        }
+        
+        if (dragState.started) {
+            const offsetY = 50; 
+            dragState.cloneEl.style.left = `${e.clientX}px`;
+            dragState.cloneEl.style.top = `${e.clientY - offsetY}px`;
+            updateHoverHighlight(e.clientX, e.clientY);
+        }
+        e.preventDefault();
+    }
+
+    function onDocumentPointerUp(e) {
+        if (e.pointerId !== dragState.pointerId) return;
+        
+        if (dragState.started) {
+            const target = getSquareFromPoint(e.clientX, e.clientY);
+            if (target) {
+                if (dragState.isBuildingDrag) {
+                    if (isNearOwnPiece(target.r, target.c)) {
+                        buildSomething(target.r, target.c, dragState.from.type);
+                    } else if (dragState.from.type === 'demolish') {
+                        buildSomething(target.r, target.c, 'demolish');
+                    } else {
+                        alert("Строить можно только рядом с союзными юнитами.");
+                    }
+                } else {
+                    if (isValidMove(dragState.from.r, dragState.from.c, target.r, target.c)) {
+                        movePiece(dragState.from.r, dragState.from.c, target.r, target.c);
+                    }
+                }
+            }
+            cleanupDrag();
+        }
+        document.removeEventListener('pointermove', onDocumentPointerMove);
+        document.removeEventListener('pointerup', onDocumentPointerUp);
+    }
+
+    function isNearOwnPiece(r, c) {
+        if (state[r][c] && state[r][c].color === playerColor && (dragState.from.type.endsWith('_t2') || dragState.from.type.endsWith('_t3'))) return true;
+        if (state[r][c]) return false; 
+        
+        const targetIsFog = isFog(r, c);
+        for(let dr = -1; dr <= 1; dr++) {
+            for(let dc = -1; dc <= 1; dc++) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                    const neighbor = state[nr][nc];
+                    if (neighbor && neighbor.color === playerColor && !BUILDINGS.includes(neighbor.type)) {
+                        if (targetIsFog === isFog(nr, nc)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    function cleanupDrag() {
+        if (dragState.cloneEl && dragState.cloneEl.parentElement) dragState.cloneEl.parentElement.removeChild(dragState.cloneEl);
+        if (dragState.lastHover) dragState.lastHover.classList.remove('drag-over');
+        dragState.lastHover = null;
+    }
+
+    function updateHoverHighlight(x, y) {
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'none';
+        const el = document.elementFromPoint(x, y);
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'flex';
+        
+        const sq = el?.closest('.square');
+        if (dragState.lastHover && dragState.lastHover !== sq) dragState.lastHover.classList.remove('drag-over');
+        if (sq) {
+            sq.classList.add('drag-over');
+            dragState.lastHover = sq;
+        }
+    }
+
+    function getSquareFromPoint(x, y) {
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'none';
+        const el = document.elementFromPoint(x, y);
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'flex';
+        
+        const sq = el?.closest('.square');
+        if (!sq) return null;
+        
+        const idx = Array.from(document.getElementById('board').children).indexOf(sq);
+        if (idx === -1) return null;
+        const visualRow = Math.floor(idx / cols);
+        const c = idx % cols;
+        const r = playerColor === 'b' ? (rows - 1) - visualRow : visualRow;
+        return { r, c };
+    }
+</script>
+</body>
+</html>
