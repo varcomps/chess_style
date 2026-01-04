@@ -1,0 +1,1983 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CHESS STRATEGY</title>
+    <style>
+        /* --- ГЛОБАЛЬНЫЕ НАСТРОЙКИ --- */
+        :root { 
+            --bg-deep: #050505; 
+            --sq-light: #b8c0c4; 
+            --sq-dark: #6e7f8a;
+            --rows: 8; 
+            --cols: 8;
+            --accent: #f1c40f; 
+            --menu-bg: rgba(16, 20, 24, 0.95);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            
+            --tier-1: #bdc3c7;
+            --tier-2: #2ecc71;
+            --tier-3: #00d2d3;
+            
+            --sq-size: 40px; /* Динамический JS */
+        }
+
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
+            color: white; 
+            display: flex; flex-direction: column; align-items: center; 
+            margin: 0; padding: 0; overflow: hidden; height: 100vh; width: 100vw;
+            user-select: none; -webkit-user-select: none;
+            touch-action: none; 
+        }
+        
+        body::before {
+            content: "";
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-image: 
+                radial-gradient(white 1px, transparent 1px),
+                radial-gradient(rgba(255,255,255,0.5) 1px, transparent 1px);
+            background-size: 50px 50px, 100px 100px;
+            background-position: 0 0, 25px 25px;
+            opacity: 0.1; z-index: -1;
+        }
+
+        #game-layout { 
+            position: relative; 
+            display: flex; 
+            flex-direction: column; 
+            width: 100%; 
+            height: 100%; 
+            box-sizing: border-box;
+            overflow: hidden;
+            /* Важно: layout сам не имеет паддингов, отступы регулируются внутри */
+        }
+
+        /* --- UI ПАНЕЛИ --- */
+        .ui-container {
+            position: absolute; top: 0; left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 100;
+            padding-top: 10px;
+            pointer-events: none; 
+            transition: all 0.3s ease;
+        }
+
+        .ui { 
+            pointer-events: auto;
+            background: var(--menu-bg); padding: 8px 20px; 
+            border-radius: 20px; text-align: center; 
+            border: 1px solid var(--glass-border); 
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            display: flex; flex-direction: column; gap: 5px; align-items: center;
+            max-width: 95%; width: fit-content;
+            transition: all 0.3s ease;
+        }
+
+        #status { 
+            font-size: 1.0em; color: var(--accent); font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+            text-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
+            margin: 0; padding: 0;
+        }
+        
+        /* ПАНЕЛЬ РЕСУРСОВ: Скрыта по умолчанию */
+        #resource-panel {
+            display: none; 
+            flex-wrap: wrap; justify-content: center; gap: 8px;
+            margin-top: 5px; padding-top: 5px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        /* КНОПКА АПОГЕЙ: Скрыта по умолчанию */
+        #btn-apogee {
+            display: none;
+            background: linear-gradient(135deg, #8e44ad, #c0392b); 
+            margin-top: 5px; width: 100%; padding: 8px;
+            font-size: 0.8em;
+            box-shadow: 0 0 15px rgba(142, 68, 173, 0.5);
+        }
+
+        /* --- ЛОГИКА ОТОБРАЖЕНИЯ ПРИ BUILD MODE --- */
+        .build-mode #resource-panel { display: flex; animation: fadeIn 0.3s; }
+        .build-mode #btn-apogee { display: block; animation: fadeIn 0.3s; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .res-item { display: flex; align-items: center; gap: 3px; font-weight: 600; font-size: 0.8em; }
+        .res-wood { color: #9b59b6; } .res-stone { color: #bdc3c7; }
+        .res-metal { color: #f39c12; } .res-cedar { color: #d35400; }
+        .res-paper { color: #f1c40f; } .res-food { color: #2ecc71; }
+        .res-gem { color: #00d2d3; text-shadow: 0 0 8px rgba(0, 210, 211, 0.6); }
+        .res-coal { color: #95a5a6; } .res-poly { color: #e056fd; text-shadow: 0 0 8px rgba(224, 86, 253, 0.6); }
+        .limit-reached { color: #e74c3c !important; text-shadow: 0 0 5px red; animation: pulseRed 1.5s infinite; }
+        @keyframes pulseRed { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        button { 
+            padding: 10px 20px; background: #27ae60; color: white; 
+            border: none; border-radius: 8px; cursor: pointer; font-weight: 700; 
+            transition: all 0.2s; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+            touch-action: manipulation;
+        }
+        button:active { transform: scale(0.96); }
+
+        /* --- МЕНЮ СТРОИТЕЛЬСТВА --- */
+        #build-menu-container {
+            position: absolute; 
+            background: var(--menu-bg); 
+            border: 1px solid var(--glass-border); 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            backdrop-filter: blur(15px); z-index: 150;
+            transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+            display: flex; flex-direction: column;
+        }
+
+        .menu-tabs { display: flex; gap: 6px; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;}
+        .tab-btn {
+            background: rgba(255,255,255,0.03); border: 1px solid transparent;
+            color: #7f8c8d; padding: 10px 0; width: 100%; text-align: center;
+            border-radius: 8px; cursor: pointer; font-size: 0.75em; font-weight: bold; letter-spacing: 1px;
+            transition: 0.2s;
+        }
+        .tab-btn.active { background: rgba(241, 196, 15, 0.1); color: var(--accent); border-color: var(--accent); text-shadow: 0 0 10px rgba(241, 196, 15, 0.4); }
+
+        #build-list {
+            display: flex; 
+            overflow-y: auto; overflow-x: hidden;
+            padding: 5px 2px; flex-grow: 1; 
+        }
+
+        .build-group { display: none; width: 100%; }
+        .build-group.active { display: flex; animation: fadeIn 0.3s; }
+
+        .build-item {
+            width: 60px; height: 60px; background: rgba(255,255,255,0.03);
+            border-radius: 14px; display: flex; align-items: center; justify-content: center;
+            cursor: grab; transition: 0.2s; position: relative; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;
+            touch-action: pan-x; 
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+        }
+        .build-item:active { transform: scale(0.92); background: rgba(255,255,255,0.1); }
+        
+        .build-item::after { 
+            position: absolute; top: -6px; right: -6px; 
+            font-size: 10px; padding: 2px 5px; border-radius: 6px; font-weight: 900; color: #000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .t1-item { border-color: var(--tier-1); } .t1-item::after { content: 'I'; background: var(--tier-1); }
+        .t2-item { border-color: var(--tier-2); box-shadow: inset 0 0 10px rgba(46, 204, 113, 0.1); } .t2-item::after { content: 'II'; background: var(--tier-2); }
+        .t3-item { border-color: var(--tier-3); box-shadow: inset 0 0 10px rgba(0, 210, 211, 0.1); } .t3-item::after { content: 'III'; background: var(--tier-3); }
+        .demolish-item { border-color: #e74c3c !important; background: rgba(231, 76, 60, 0.1) !important; }
+        .demolish-item::after { content: 'X' !important; background: #e74c3c !important; color: white !important; }
+        .build-item .icon { font-size: 30px; pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+        
+        #swipe-zone { display: none; }
+
+
+        /* --- DESKTOP (PC) --- */
+        @media (min-width: 769px) {
+            #build-menu-container {
+                left: 20px; top: 50%;
+                transform: translateY(-50%) translateX(-250%);
+                width: 190px;
+                border-radius: 16px; padding: 12px;
+                gap: 10px; max-height: 80vh;
+            }
+            .build-mode #build-menu-container { transform: translateY(-50%) translateX(0); }
+
+            .menu-tabs { flex-direction: column; }
+            #build-list { flex-direction: column; }
+            .build-group { display: none; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 10px; }
+            .build-group.active { display: flex; }
+        }
+
+        /* --- МОБИЛЬНАЯ ВЕРСИЯ --- */
+        @media (max-width: 768px) {
+            
+            #build-menu-container {
+                left: 0; top: auto; bottom: 0;
+                transform: translateY(100%); 
+                width: 100%; box-sizing: border-box;
+                border-radius: 20px 20px 0 0;
+                padding: 10px 0 15px 0; 
+                height: auto; 
+                max-height: 38vh; /* Ограничим высоту меню */
+                background: #151515;
+                border: none; border-top: 2px solid var(--accent);
+                box-shadow: 0 -5px 30px rgba(0,0,0,0.9);
+                z-index: 200;
+            }
+            
+            #build-menu-container::before {
+                content: "";
+                position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+                width: 30px; height: 3px; background: #333; border-radius: 2px;
+            }
+
+            .build-mode #build-menu-container { 
+                transform: translateY(0); 
+            }
+
+            .menu-tabs { 
+                flex-direction: row; width: 100%; border-bottom: none; 
+                padding: 0 10px; box-sizing: border-box;
+                justify-content: space-between; gap: 8px;
+                margin-top: 5px; margin-bottom: 5px;
+            }
+            .tab-btn { width: 32%; padding: 8px 0; background: #222; font-size: 0.7em; border-radius: 6px; }
+            
+            #build-list {
+                flex-direction: row; width: 100%; 
+                overflow-x: auto; overflow-y: hidden;
+                padding: 5px 10px; box-sizing: border-box;
+                touch-action: pan-x; -webkit-overflow-scrolling: touch; 
+                min-height: 80px; 
+            }
+            
+            .build-group { flex-direction: row; width: max-content; gap: 10px; }
+            #build-list::-webkit-scrollbar { display: none; }
+            .build-item { width: 60px; height: 60px; margin-right: 5px; }
+            
+            #swipe-zone {
+                display: block;
+                position: fixed; bottom: 0; left: 0; width: 100%; height: 60px;
+                z-index: 100;
+                background: linear-gradient(to top, rgba(241, 196, 15, 0.1), transparent);
+                pointer-events: auto;
+            }
+            #swipe-zone::after {
+                content: "▲ СВАЙП ВВЕРХ";
+                position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+                color: rgba(255,255,255,0.5); font-size: 10px; pointer-events: none;
+                text-transform: uppercase; letter-spacing: 2px;
+            }
+            .build-mode #swipe-zone { display: none; }
+            
+            #forge-ui { bottom: 200px; right: 10px; }
+            
+            /* Когда меню открыто, Forge UI поднимается выше */
+            .build-mode #forge-ui { bottom: 200px; } 
+            
+            .ui { font-size: 0.9em; width: 92%; }
+        }
+
+        /* --- ДОСКА --- */
+        #board-wrapper { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            width: 100%;
+            height: 100%;
+            flex-grow: 1; 
+            overflow: hidden; 
+            padding: 0; 
+            box-sizing: border-box;
+            position: relative;
+            z-index: 50;
+        }
+
+        #board { 
+            display: grid; 
+            grid-template-columns: repeat(var(--cols), var(--sq-size)); 
+            grid-template-rows: repeat(var(--rows), var(--sq-size)); 
+            position: relative; 
+            background: #000;
+            border: 4px solid #333; 
+            border-radius: 6px;
+            box-shadow: 0 0 50px rgba(0,0,0,1); 
+            transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+            touch-action: none;
+            width: max-content;
+            height: max-content;
+        }
+        
+        .build-mode #board:not(.expanded) { 
+            border-color: var(--accent); 
+            box-shadow: 0 0 40px rgba(243, 156, 18, 0.2); 
+        }
+        
+        #board.expanded { 
+            background: transparent; 
+            border: none; 
+            box-shadow: none; 
+        }
+        
+        .square { 
+            width: var(--sq-size); height: var(--sq-size); 
+            display: flex; justify-content: center; align-items: center; 
+            position: relative; box-sizing: border-box; 
+            background-color: #222; 
+            /* Плавное изменение размера клетки */
+            transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .square.light { background-color: var(--sq-light); }
+        .square.dark { background-color: var(--sq-dark); }
+        
+        .square.fog {
+            background-color: #0b0b0b !important;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%;
+            border: 1px solid rgba(0,0,0,0.5); 
+            box-shadow: inset 0 0 20px #000;
+            z-index: 1;
+        }
+
+        .square.drag-over { 
+            background: rgba(241, 196, 15, 0.4) !important; 
+            box-shadow: inset 0 0 0 3px #f1c40f; 
+        }
+        
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            70% { transform: scale(1.05); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .square.growing { 
+            transform-origin: center; 
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; 
+            box-shadow: 0 0 10px rgba(0,255,255,0.2);
+        }
+
+        .piece { 
+            width: 85%; height: 85%; background-size: contain; background-repeat: no-repeat; 
+            background-position: center; cursor: grab; z-index: 10; 
+            filter: drop-shadow(0 5px 3px rgba(0,0,0,0.6)); 
+            position: relative; touch-action: none; pointer-events: auto;
+            transition: transform 0.1s, width 0.3s, height 0.3s;
+        }
+        .piece:active { transform: scale(1.1); }
+        
+        .piece .armor-badge {
+            position: absolute; bottom: -5px; right: -5px; left: auto;
+            background: #3498db; color: white; border: 2px solid #2c3e50;
+            border-radius: 50%; width: 18px; height: 18px;
+            font-size: 10px; display: flex; align-items: center; justify-content: center;
+            font-weight: bold; z-index: 12; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        .special-piece { 
+            font-size: calc(var(--sq-size) * 0.65); 
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.8)); 
+            pointer-events: none; z-index: 11; display: flex; justify-content: center; align-items: center;
+            position: relative;
+            transition: font-size 0.3s;
+        }
+        .special-piece .hp-bar {
+            position: absolute; bottom: 0; width: 120%; height: 5px; 
+            background: #333; border: 1px solid #000; border-radius: 3px; overflow: hidden;
+            box-shadow: 0 2px 4px black;
+        }
+        .special-piece .hp-val { height: 100%; background: linear-gradient(90deg, #e74c3c, #c0392b); }
+
+        /* MODALS */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 2000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            backdrop-filter: blur(8px); animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .modal-content {
+            background: linear-gradient(145deg, #2c3e50, #202d3a); 
+            padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+            text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.8); width: 90%; max-width: 400px;
+        }
+        .promo-options { display: flex; gap: 12px; margin-top: 20px; justify-content: center; flex-wrap: wrap; }
+        .promo-btn {
+            width: 70px; height: 70px; background: rgba(255,255,255,0.05); 
+            border: 2px solid #555;
+            border-radius: 12px; cursor: pointer; font-size: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; transition: 0.2s;
+        }
+        .promo-btn:hover { background: rgba(255,255,255,0.1); border-color: var(--accent); }
+        .promo-btn .cost { font-size: 10px; margin-top: 5px; color: #f1c40f; font-weight: bold;}
+
+        .dragging-clone {
+            position: fixed; width: var(--sq-size); height: var(--sq-size); pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%) scale(1.2); opacity: 0.9;
+            background-size: contain; background-repeat: no-repeat; background-position: center;
+            display: flex; align-items: center; justify-content: center; 
+            font-size: calc(var(--sq-size) * 0.7);
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.5));
+        }
+
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+        .hidden-btn { display: none !important; }
+
+        #ui-tooltip {
+            position: fixed; pointer-events: none; z-index: 2000;
+            background: rgba(0,0,0,0.9); padding: 10px 15px; border-radius: 8px;
+            border: 1px solid var(--accent); color: #ecf0f1; font-size: 13px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.8);
+            display: none; white-space: nowrap; backdrop-filter: blur(4px);
+        }
+
+        /* --- TOAST NOTIFICATIONS --- */
+        #game-toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: rgba(20, 20, 20, 0.95);
+            color: #fff;
+            text-align: center;
+            border-radius: 12px;
+            padding: 16px;
+            position: fixed;
+            z-index: 10000;
+            left: 50%;
+            bottom: 100px;
+            transform: translateX(-50%);
+            font-size: 16px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            border: 1px solid var(--accent);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s;
+        }
+        #game-toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 110px;
+        }
+
+        #forge-ui { 
+            position: absolute; bottom: 30px; right: 20px; 
+            background: rgba(20, 20, 20, 0.9); border: 1px solid #e67e22; 
+            padding: 12px; border-radius: 12px; z-index: 155; display: none;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(230, 126, 34, 0.3);
+            transition: bottom 0.3s;
+        }
+        
+        /* --- АНИМИРОВАННОЕ МЕНЮ ПОДКЛЮЧЕНИЯ --- */
+        #connection-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; 
+            z-index: 3000; display: flex; justify-content: center; align-items: center;
+            transition: opacity 0.5s; padding: 20px; box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        #menu-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; opacity: 0.4;
+        }
+        
+        #connection-card {
+            background: rgba(10, 10, 10, 0.7);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 50px 30px; border-radius: 0;
+            box-shadow: 0 0 50px rgba(0,0,0,0.9), inset 0 0 20px rgba(0,0,0,0.5);
+            text-align: center; width: 100%; max-width: 400px;
+            backdrop-filter: blur(10px);
+            display: flex; flex-direction: column; gap: 25px;
+            position: relative; z-index: 10;
+            clip-path: polygon(
+                0 0, 100% 0, 
+                100% calc(100% - 20px), calc(100% - 20px) 100%, 
+                0 100%
+            );
+            border-left: 2px solid var(--accent);
+        }
+
+        .conn-title { 
+            font-size: 3.5em; font-weight: 900; color: #fff; 
+            letter-spacing: 2px; text-transform: uppercase;
+            text-shadow: 2px 2px 0px var(--accent);
+            margin-bottom: 5px;
+            position: relative;
+            animation: glitch 3s infinite;
+        }
+        
+        @keyframes glitch {
+            0% { text-shadow: 2px 2px 0px var(--accent); transform: translate(0); }
+            2% { text-shadow: -2px -2px 0px #0ff; transform: translate(-2px, 2px); }
+            4% { text-shadow: 2px 2px 0px var(--accent); transform: translate(0); }
+            100% { text-shadow: 2px 2px 0px var(--accent); transform: translate(0); }
+        }
+        
+        .conn-input-wrapper { text-align: left; }
+        .conn-label { color: var(--accent); font-size: 0.7em; margin-bottom: 5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;}
+
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+
+        input {
+            width: 100%; padding: 18px; background: rgba(0,0,0,0.5);
+            border: 1px solid #444; color: var(--accent);
+            font-size: 1.5em; text-align: center; box-sizing: border-box;
+            outline: none; transition: 0.3s; font-family: 'Courier New', monospace; letter-spacing: 4px;
+            border-radius: 4px;
+        }
+        input:focus { border-color: var(--accent); box-shadow: 0 0 15px rgba(241, 196, 15, 0.2); background: rgba(0,0,0,0.8); }
+        
+        .conn-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px; }
+        
+        .connect-btn { 
+            padding: 20px; font-size: 1em; 
+            border-radius: 4px; font-weight: 800; cursor: pointer; border:none;
+            transition: all 0.2s; position: relative; overflow: hidden;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        
+        .btn-create { 
+            background: transparent; border: 2px solid #3498db; color: #3498db; 
+        }
+        .btn-create:hover { background: rgba(52, 152, 219, 0.1); box-shadow: 0 0 20px rgba(52, 152, 219, 0.4); }
+        
+        .btn-join { 
+            background: var(--accent); color: #000; border: 2px solid var(--accent);
+        }
+        .btn-join:hover { background: #fff; border-color: #fff; box-shadow: 0 0 20px rgba(255,255,255, 0.4); }
+        
+    </style>
+</head>
+<body>
+
+<div id="game-toast">Сообщение</div>
+<div id="ui-tooltip"></div>
+<div id="swipe-zone"></div>
+
+<div id="forge-ui">
+    <button onclick="useForge()" style="background: linear-gradient(to right, #e67e22, #d35400);">⚒️ КОВАТЬ (2мет, 2уг)</button>
+</div>
+
+<div id="academy-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h2 style="color: #f1c40f; margin:0 0 15px 0;">ВЕРБОВКА (1 ОД)</h2>
+        <div style="margin-bottom: 15px;">
+            <div style="color:#aaa; font-size:0.8em; margin-bottom:5px; text-transform:uppercase;">Стандарт (2 Бумаги 📜)</div>
+            <div class="promo-options" id="acad-std-options"></div>
+        </div>
+        <div id="acad-elite-section" class="hidden">
+            <div style="color:gold; font-size:0.8em; margin-bottom:5px; text-transform:uppercase;">Элита (5 Бумаги 📜)</div>
+            <div class="promo-options" id="acad-elite-options"></div>
+        </div>
+        <button onclick="closeModal('academy-modal')" style="margin-top:20px; background:#c0392b; width:100%;">ОТМЕНА</button>
+    </div>
+</div>
+
+<div id="promotion-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h2 style="color: #f1c40f; margin:0;">ВЫБЕРИ СУДЬБУ</h2>
+        <div class="promo-options" id="promo-options-container"></div>
+    </div>
+</div>
+
+<div id="victory-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <div id="victory-title" style="font-size:2.5em; font-weight:900; margin-bottom:20px; text-shadow:0 0 20px currentColor;"></div>
+        <button onclick="location.reload()" style="font-size: 1.2em; padding: 15px 40px; background: #fff; color:#000;">ЕЩЁ РАЗ</button>
+    </div>
+</div>
+
+<div id="connection-overlay">
+    <canvas id="menu-canvas"></canvas>
+    <div id="connection-card">
+        <div>
+            <div class="conn-title">CHESS</div>
+            <div style="color: #888; font-size: 0.8em; letter-spacing: 6px; text-transform: uppercase;">Tactical Warfare</div>
+        </div>
+        
+        <div class="conn-input-wrapper">
+            <div class="conn-label">Access Code</div>
+            <input type="number" id="room-code" placeholder="000000" maxlength="6">
+        </div>
+        
+        <div class="conn-actions">
+            <button class="connect-btn btn-create" onclick="createGame()">СОЗДАТЬ</button>
+            <button class="connect-btn btn-join" onclick="joinGame()">ВОЙТИ</button>
+        </div>
+    </div>
+</div>
+
+<div id="game-layout">
+    <div class="ui-container">
+        <div class="ui">
+            <div id="status">ОЖИДАНИЕ...</div>
+            
+            <div id="resource-panel">
+                <div class="res-item res-wood"><span>🪵</span> <span id="res-wood-val">0</span>/5</div>
+                <div class="res-item res-stone"><span>🧱</span> <span id="res-stone-val">0</span>/5</div>
+                <div class="res-item res-metal"><span>⛓️</span> <span id="res-metal-val">0</span>/5</div>
+                <div class="res-item res-cedar"><span>🌲</span> <span id="res-cedar-val">0</span>/5</div>
+                <div class="res-item res-paper"><span>📜</span> <span id="res-paper-val">0</span>/5</div>
+                <div class="res-item res-food"><span>🍞</span> <span id="res-food-val">0</span>/5</div>
+                <div class="res-item res-gem"><span>💎</span> <span id="res-gem-val">0</span>/5</div>
+                <div class="res-item res-coal"><span>⚫</span> <span id="res-coal-val">0</span>/5</div>
+                <div class="res-item res-poly"><span>🧪</span> <span id="res-poly-val">0</span>/5</div>
+            </div>
+
+            <button id="btn-apogee" onclick="activateApogee()">☄️ АПОГЕЙ</button>
+        </div>
+    </div>
+
+    <div id="board-wrapper">
+        <div id="board"></div>
+    </div>
+</div>
+
+<div id="build-menu-container">
+    <div class="menu-tabs">
+        <div class="tab-btn active" id="tab-btn-build" onclick="switchTab('build')">СТРОЙ</div>
+        <div class="tab-btn" id="tab-btn-upgrade" onclick="switchTab('upgrade')">УЛУЧШ</div>
+        <div class="tab-btn" id="tab-btn-elite" onclick="switchTab('elite')">ЭЛИТА</div>
+    </div>
+    
+    <div id="build-list">
+        <div class="build-group group-build active">
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div id="btn-build-hq" class="build-item t1-item" data-type="hq" data-label="ШТАБ" data-cost="4к, 2д | 1 ОД" onpointerdown="onSidebarPointerDown(event, 'hq')"><span class="icon">🏰</span></div>
+            <div class="build-item t1-item" data-type="fortress" data-label="СТЕНА" data-cost="4 Камня | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress')"><span class="icon">🧱</span></div>
+            <div class="build-item t1-item" data-type="camp" data-label="ЛАГЕРЬ" data-cost="3д, 1од | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'camp')"><span class="icon">⛺</span></div>
+            <div class="build-item t1-item" data-type="lumber" data-label="ЛЕСОПОВАЛ" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber')"><span class="icon">🪓</span></div>
+            <div class="build-item t1-item" data-type="mine" data-label="РУДНИК" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'mine')"><span class="icon">⛏️</span></div>
+            <div class="build-item t1-item" data-type="farm" data-label="ФЕРМА" data-cost="2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'farm')"><span class="icon">🌾</span></div>
+            <div class="build-item t1-item" data-type="academy" data-label="АКАДЕМИЯ" data-cost="2к, 2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy')"><span class="icon">🎓</span></div>
+            <div class="build-item t1-item" data-type="papermill" data-label="ПЕЧАТНЯ" data-cost="2к, 2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'papermill')"><span class="icon">📜</span></div>
+        </div>
+
+        <div class="build-group group-upgrade">
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div class="build-item t2-item" data-type="lumber_t2" data-label="АПГРЕЙД: ЛЕСОПИЛКА T2" data-cost="4д, 2к | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t2')"><span class="icon">🌲</span></div>
+            <div class="build-item t2-item" data-type="mine_t2" data-label="АПГРЕЙД: ШАХТА T2" data-cost="4к, 2д | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t2')"><span class="icon">🏗️</span></div>
+            <div class="build-item t2-item" data-type="academy_t2" data-label="АПГРЕЙД: УНИВЕРСИТЕТ" data-cost="2к, 2д, 2кедр, 2мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy_t2')"><span class="icon">🏛️</span></div>
+            <div class="build-item t2-item" data-type="fortress_t2" data-label="АПГРЕЙД: БАСТИОН" data-cost="4к, 2мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t2')"><span class="icon">🛡️</span></div>
+            <div class="build-item t2-item" data-type="furnace" data-label="ПЕЧЬ" data-cost="3к, 1мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'furnace')"><span class="icon">🔥</span></div>
+        </div>
+
+        <div class="build-group group-elite">
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div class="build-item t3-item" data-type="lumber_t3" data-label="ЗАВОД ПОЛИМЕРОВ" data-cost="4д, 2к, 2мет, 2кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t3')"><span class="icon">🧬</span></div>
+            <div class="build-item t3-item" data-type="mine_t3" data-label="АЛМАЗНЫЙ БУР" data-cost="2д, 4к, 2мет, 2кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t3')"><span class="icon">💎</span></div>
+            <div class="build-item t3-item" data-type="fortress_t3" data-label="АПГРЕЙД: ЦИТАДЕЛЬ" data-cost="5к, 5мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t3')"><span class="icon">🏯</span></div>
+            <div class="build-item t3-item" data-type="forge" data-label="КУЗНЯ БОГОВ" data-cost="5д, 5мет, 5уг, 5алм | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'forge')"><span class="icon">⚒️</span></div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAN-w6PnAnTBxpBrgEd7Xt8ChNmBKL3AVk",
+        authDomain: "chessalio.firebaseapp.com",
+        projectId: "chessalio",
+        storageBucket: "chessalio.firebasestorage.app",
+        messagingSenderId: "405155447838",
+        appId: "1:405155447838:web:b6629a43f3bd35a38fda0f",
+        measurementId: "G-5QBXY2QRWF"
+    };
+
+    let db;
+    let gameRef;
+    let myColor = null;
+    let currentRoom = null;
+
+    try {
+        const app = initializeApp(firebaseConfig);
+        db = getDatabase(app);
+    } catch(e) {
+        showToast("Ошибка Firebase! Проверьте конфиг.");
+        console.error(e);
+    }
+
+    /* --- НОВАЯ СЕТКА: ЧАЩЕ И МЕЛЬЧЕ --- */
+    (function() {
+        const canvas = document.getElementById('menu-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let offset = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 0.5; // Тоньше линии
+            
+            const horizon = height * 0.45; 
+            const centerX = width / 2;
+            const baseWidth = width * 1.5; 
+            
+            // Увеличиваем количество лучей (было 12, стало 40)
+            const rays = 40;
+
+            for(let i=0; i<=rays; i++) {
+                let t = (i / rays) - 0.5;
+                let xBottom = centerX + t * baseWidth * 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(centerX, horizon);
+                ctx.lineTo(xBottom, height);
+                ctx.stroke();
+            }
+            
+            offset = (offset + 0.003) % 1; 
+            
+            // Увеличиваем количество горизонтальных линий (было 20, стало 80)
+            const lines = 80;
+            for (let i = 0; i < lines; i++) {
+               let p = 1 - (i + offset) / lines; 
+               if(p <= 0) continue;
+               
+               let y = horizon + (height - horizon) * (p * p * p);
+               
+               let currentScale = p * p * p;
+               let currentW = (baseWidth * 2) * currentScale;
+               
+               let xStart = centerX - currentW / 2;
+               let xEnd = centerX + currentW / 2;
+               
+               ctx.strokeStyle = `rgba(50, 50, 50, ${p})`; 
+
+               ctx.beginPath();
+               ctx.moveTo(xStart, y);
+               ctx.lineTo(xEnd, y);
+               ctx.stroke();
+            }
+
+            requestAnimationFrame(draw);
+        }
+        draw();
+    })();
+
+    /* --- ЛОГИКА РАЗМЕРА ДОСКИ (ФИНАЛЬНАЯ) --- */
+    function recalcBoard() {
+        const buildMenu = document.getElementById('build-menu-container');
+        
+        let safeTop = 60; // В обычном режиме только статус бар
+        let safeBottom = 15; // В обычном режиме минимальный отступ
+
+        // Если режим стройки - сверху много места под ресурсы и кнопку
+        if (isBuildMode) {
+             // Высота развернутой верхней панели (примерно)
+             safeTop = 150; 
+        }
+
+        if (window.innerWidth <= 768) {
+            if (isBuildMode) {
+                // Если открыто меню стройки, отнимаем его высоту
+                const menuH = buildMenu.offsetHeight || (window.innerHeight * 0.38); 
+                safeBottom = menuH + 10; 
+            } else {
+                // Если меню закрыто - отступ под свайп зону
+                safeBottom = 60; 
+            }
+        }
+
+        // Вычисляем доступное место
+        const availableHeight = window.innerHeight - safeTop - safeBottom;
+        const availableWidth = window.innerWidth - 10;
+
+        if (availableHeight < 0) return;
+
+        // Расчет размера клетки
+        const maxSqH = Math.floor(availableHeight / rows);
+        const maxSqW = Math.floor(availableWidth / cols);
+        
+        let sqSize = Math.min(maxSqH, maxSqW);
+
+        // Применяем размер.
+        document.documentElement.style.setProperty('--sq-size', sqSize + 'px');
+        
+        // Сдвигаем контейнер доски вниз на высоту верхней панели, чтобы центрировать остаток
+        const wrapper = document.getElementById('board-wrapper');
+        wrapper.style.paddingTop = safeTop + 'px';
+        wrapper.style.paddingBottom = safeBottom + 'px';
+    }
+
+    // Вызываем пересчет при загрузке, ресайзе и изменении режима
+    window.addEventListener('resize', recalcBoard);
+    window.addEventListener('load', recalcBoard);
+
+    /* --- GESTURE HANDLING --- */
+    (function initGestures() {
+        let touchStartY = 0;
+        let touchEndY = 0;
+        const MIN_SWIPE_DISTANCE = 50;
+
+        const swipeZone = document.getElementById('swipe-zone');
+        
+        swipeZone.addEventListener('touchstart', e => {
+            touchStartY = e.changedTouches[0].screenY;
+        }, {passive: true});
+        
+        swipeZone.addEventListener('touchend', e => {
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }, {passive: true});
+
+        document.addEventListener('touchstart', e => {
+            if (!isBuildMode) return;
+            touchStartY = e.changedTouches[0].screenY;
+        }, {passive: true});
+
+        document.addEventListener('touchend', e => {
+            if (!isBuildMode) return;
+            touchEndY = e.changedTouches[0].screenY;
+            handleCloseSwipe(e);
+        }, {passive: false});
+
+        function handleSwipe() {
+            if (touchStartY - touchEndY > MIN_SWIPE_DISTANCE) {
+                if (!isBuildMode && actionsLeft > 0) toggleBuildMode(true);
+            }
+        }
+
+        function handleCloseSwipe(e) {
+             if (touchEndY - touchStartY > MIN_SWIPE_DISTANCE) {
+                 const buildList = document.getElementById('build-list');
+                 if (buildList && buildList.contains(e.target)) {
+                     if (buildList.scrollTop > 5) return;
+                 }
+                 if (isBuildMode) toggleBuildMode(false);
+             }
+        }
+    })();
+
+    /* --- EXPORT TO GLOBAL --- */
+    window.createGame = createGame;
+    window.joinGame = joinGame;
+    window.sendNetworkMessage = sendNetworkMessage;
+
+    function createGame() {
+        const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
+        document.getElementById('room-code').value = roomCode;
+        
+        currentRoom = roomCode;
+        myColor = 'w';
+        
+        document.getElementById('status').innerText = `КОМНАТА: ${roomCode}`;
+        showToast(`Комната ${roomCode} создана.`);
+        
+        gameRef = ref(db, 'games/' + roomCode);
+        
+        set(gameRef, {
+            status: 'waiting',
+            white_present: true,
+            last_move: null
+        }).then(() => {
+            onDisconnect(gameRef).remove();
+            waitForOpponent();
+        }).catch((error) => {
+            showToast("Ошибка БД! " + error.message);
+            console.error(error);
+        });
+    }
+
+    function joinGame() {
+        const roomCode = document.getElementById('room-code').value.trim();
+        if (roomCode.length !== 6) return showToast("Введите 6-значный код!");
+
+        currentRoom = roomCode;
+        myColor = 'b';
+        showToast(`Подключение...`);
+        
+        gameRef = ref(db, 'games/' + roomCode);
+        
+        set(ref(db, 'games/' + roomCode + '/status'), 'playing')
+            .then(() => {
+                showToast("Успешное подключение!");
+                setupGameListener();
+                document.getElementById('connection-overlay').classList.add('hidden');
+                initBoard();
+                updateUI();
+            })
+            .catch((error) => {
+                showToast("Ошибка: Комната не найдена.");
+            });
+    }
+
+    function waitForOpponent() {
+        const statusRef = ref(db, 'games/' + currentRoom + '/status');
+        
+        onValue(statusRef, (snapshot) => {
+            const val = snapshot.val();
+            if (val === 'playing') {
+                showToast("ПРОТИВНИК НАЙДЕН!");
+                document.getElementById('connection-overlay').classList.add('hidden');
+                setupGameListener();
+                initBoard();
+                updateUI();
+            }
+        });
+    }
+
+    function setupGameListener() {
+        const moveRef = ref(db, 'games/' + currentRoom + '/last_move');
+        onValue(moveRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data && data.senderColor !== myColor) {
+                handleData(data);
+            }
+        });
+    }
+
+    function sendNetworkMessage(data) {
+        if (!gameRef) return;
+        data.senderColor = myColor;
+        set(ref(db, 'games/' + currentRoom + '/last_move'), data);
+    }
+
+    /* --- HELPERS --- */
+    function showToast(msg) {
+        const t = document.getElementById('game-toast');
+        t.innerText = msg;
+        t.className = "show";
+        setTimeout(() => { t.className = t.className.replace("show", ""); }, 3000);
+    }
+
+    /* --- CONFIG --- */
+    const PIECE_URLS = {
+        wk: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+        wq: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        wr: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        wb: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        wn: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        wp: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+        bk: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+        bq: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        br: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        bb: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        bn: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        bp: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
+    };
+
+    const BUILDINGS = ['hq', 'camp', 'academy', 'academy_t2', 'lumber', 'lumber_t2', 'lumber_t3', 'mine', 'mine_t2', 'mine_t3', 'papermill', 'farm', 'house', 'fortress', 'fortress_t2', 'fortress_t3', 'forge', 'furnace'];
+    const T2_BUILDINGS = ['academy_t2', 'lumber_t2', 'mine_t2', 'fortress_t2', 'furnace'];
+    const T3_BUILDINGS = ['lumber_t3', 'mine_t3', 'fortress_t3', 'forge']; 
+    
+    const BUILDING_ICONS = { 
+        hq: '🏰', camp: '⛺', 
+        academy: '🎓', academy_t2: '🏛️', 
+        lumber: '🪓', lumber_t2: '🌲', lumber_t3: '🧬', 
+        mine: '⛏️', mine_t2: '🏗️', mine_t3: '💎',
+        papermill: '📜', farm: '🌾',
+        house: '🏠', demolish: '🧨',
+        fortress: '🧱', fortress_t2: '🛡️', fortress_t3: '🏯',
+        forge: '⚒️', furnace: '🔥'
+    };
+
+    const BUILDING_COSTS = {
+        hq: { wood: 2, stone: 4, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        camp: { wood: 3, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        lumber: { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        mine: { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        papermill: { wood: 2, stone: 2, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        academy: { wood: 2, stone: 2, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        farm: { wood: 2, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        lumber_t2: { wood: 4, stone: 2, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        mine_t2: { wood: 2, stone: 4, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        academy_t2: { wood: 2, stone: 2, metal: 2, cedar: 2, paper: 0, food: 0, gem: 0, coal: 0 },
+        furnace: { wood: 0, stone: 3, metal: 1, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        lumber_t3: { wood: 4, stone: 2, metal: 2, cedar: 2, paper: 0, food: 0, gem: 0, coal: 0 },
+        mine_t3: { wood: 2, stone: 4, metal: 2, cedar: 2, paper: 0, food: 0, gem: 0, coal: 0 },
+        fortress: { wood: 0, stone: 4, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        fortress_t2: { wood: 0, stone: 4, metal: 2, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        fortress_t3: { wood: 0, stone: 5, metal: 5, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 },
+        forge: { wood: 5, stone: 0, metal: 5, cedar: 0, paper: 0, food: 0, gem: 5, coal: 5 },
+        demolish: { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0 }
+    };
+
+    const BUILDING_LIMITS = { hq: 1, camp: 1, academy: 1, papermill: 1, lumber: 2, mine: 2, farm: 2, fortress: 4, forge: 1, furnace: 2 };
+    const FORTRESS_HP = { fortress: 2, fortress_t2: 4, fortress_t3: 8 };
+
+    /* --- GAME VARS --- */
+    let playerColor = null; 
+    let isBuildMode = false;
+    let actionsLeft = 0;
+    let gameOver = false;
+    let isExpanded = false; 
+    let expansionAnimationDone = false;
+    let rows = 8, cols = 8;
+    let selectedPiece = null; 
+    
+    let myResources = { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0, polymer: 0 };
+    let state = Array(8).fill(null).map(() => Array(8).fill(null));
+
+    let pendingMove = null;
+    let pendingAcademy = null; 
+    
+    const dragState = {
+        started: false, cloneEl: null, from: null, isBuildingDrag: false,
+        pointerId: null, startX: 0, startY: 0, lastHover: null
+    };
+
+    // Global Functions for HTML
+    window.toggleBuildMode = toggleBuildMode;
+    window.switchTab = switchTab;
+    window.useForge = useForge;
+    window.closeModal = closeModal;
+    window.activateApogee = activateApogee;
+    window.onSidebarPointerDown = onSidebarPointerDown;
+    window.onCampClick = onCampClick;
+
+    function toggleBuildMode(forceState) {
+        if(actionsLeft <= 0 && !isBuildMode && forceState !== false) return; 
+        
+        if (typeof forceState !== 'undefined') {
+            isBuildMode = forceState;
+        } else {
+            isBuildMode = !isBuildMode;
+        }
+        
+        updateUI(); 
+        
+        // Сразу пересчитываем размер. 
+        // Благодаря CSS transition на .square, размер изменится плавно.
+        recalcBoard(); 
+        
+        render();
+    }
+
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`tab-btn-${tab}`).classList.add('active');
+        document.querySelectorAll('.build-group').forEach(g => g.classList.remove('active'));
+        document.querySelector(`.group-${tab}`).classList.add('active');
+    }
+
+    /* TOOLTIPS */
+    const tooltipEl = document.getElementById('ui-tooltip');
+    document.querySelectorAll('.build-item').forEach(item => {
+        item.addEventListener('mouseenter', e => showTooltip(e, item));
+        item.addEventListener('mousemove', moveTooltip);
+        item.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+        item.addEventListener('touchstart', (e) => {
+            showTooltip(e.touches[0], item, true);
+            setTimeout(() => tooltipEl.style.display = 'none', 4000);
+        }, {passive: true});
+    });
+
+    function showTooltip(e, item, isTouch = false) {
+        const label = item.getAttribute('data-label');
+        const cost = item.getAttribute('data-cost');
+        if(label) {
+            tooltipEl.style.display = 'block';
+            tooltipEl.innerHTML = `<strong style="color:var(--accent);">${label}</strong><br><span style="color:#fff">${cost}</span>`;
+            if (!isTouch) moveTooltip(e); 
+        }
+    }
+
+    function moveTooltip(e) {
+        if (window.innerWidth > 768) {
+            const x = e.clientX || e.pageX;
+            const y = e.clientY || e.pageY;
+            tooltipEl.style.left = (x + 15) + 'px';
+            tooltipEl.style.top = (y - 50) + 'px'; 
+        }
+    }
+
+    function initBoard() {
+        playerColor = myColor;
+        state = Array(8).fill(null).map(() => Array(8).fill(null));
+
+        const layout = ['r','n','b','q','k','b','n','r'];
+        for(let i=0; i<8; i++) {
+            state[0][i] = { type: layout[i], color: 'b', moved: false, armor: 0 };
+            state[1][i] = { type: 'p', color: 'b', moved: false, armor: 0 };
+            state[6][i] = { type: 'p', color: 'w', moved: false, armor: 0 };
+            state[7][i] = { type: layout[i], color: 'w', moved: false, armor: 0 };
+        }
+        
+        actionsLeft = (playerColor === 'w') ? 1 : 0; 
+        
+        recalcBoard(); // Начальный расчет
+        render();
+    }
+
+    function isFog(r, c) {
+        if (!isExpanded) return false;
+        return (r >= 4 && r <= 11);
+    }
+    
+    function isUpgradedUnit(piece) {
+        return piece && piece.type.endsWith('_2');
+    }
+
+    function render() {
+        const boardEl = document.getElementById('board');
+        boardEl.innerHTML = '';
+        document.documentElement.style.setProperty('--rows', rows);
+        document.documentElement.style.setProperty('--cols', cols);
+
+        if (isExpanded) boardEl.classList.add('expanded');
+        
+        const rangeR = playerColor === 'b' ? [...Array(rows).keys()].reverse() : [...Array(rows).keys()];
+        const rangeC = [...Array(cols).keys()];
+
+        const forgeUI = document.getElementById('forge-ui');
+        let forgeActive = false;
+        
+        rangeR.forEach(r => {
+            rangeC.forEach(c => {
+                const square = document.createElement('div');
+                let isDark = (r + c) % 2 !== 0;
+                square.className = `square ${isDark ? 'dark' : 'light'}`;
+                if (isFog(r, c)) square.classList.add('fog');
+                
+                if (isExpanded && r >= 4 && r < 12 && !expansionAnimationDone) { 
+                    square.classList.add('growing');
+                    const dist = Math.abs(r - 7.5) + Math.abs(c - 3.5);
+                    square.style.animationDelay = `${dist * 0.05}s`; 
+                }
+
+                const p = state[r][c];
+                
+                if(p) {
+                    const pDiv = document.createElement('div');
+                    
+                    if (p.type === 'forge') {
+                        pDiv.className = 'special-piece t3-building';
+                        pDiv.innerHTML = BUILDING_ICONS['forge'];
+                        pDiv.style.textShadow = '0 0 15px #e67e22';
+                        square.appendChild(pDiv);
+                    }
+                    else if (BUILDINGS.includes(p.type)) {
+                        pDiv.className = 'special-piece';
+                        if (T2_BUILDINGS.includes(p.type)) pDiv.classList.add('t2-building');
+                        if (T3_BUILDINGS.includes(p.type)) pDiv.classList.add('t3-building');
+                        if (p.type === 'house') pDiv.classList.add('settlement');
+                        
+                        pDiv.innerHTML = BUILDING_ICONS[p.type] || '?';
+                        
+                        if (p.type.startsWith('fortress')) {
+                            const max = FORTRESS_HP[p.type] || 2;
+                            const cur = p.hp !== undefined ? p.hp : max;
+                            const bar = document.createElement('div');
+                            bar.className = 'hp-bar';
+                            const fill = document.createElement('div');
+                            fill.className = 'hp-val';
+                            fill.style.width = (cur / max * 100) + '%';
+                            bar.appendChild(fill);
+                            pDiv.appendChild(bar);
+                        }
+
+                        let glow = 'rgba(0,0,0,0.5)';
+                        if (p.color === 'w') glow = 'rgba(255,255,255,0.7)';
+                        else if (p.color === 'b') glow = 'rgba(0,0,0,0.7)';
+                        
+                        pDiv.style.textShadow = `0 0 10px ${glow}`;
+                        
+                        if (p.type === 'camp' && p.color === playerColor) {
+                            pDiv.style.cursor = 'pointer';
+                            pDiv.addEventListener('pointerdown', e => onCampClick(e, r, c));
+                        }
+                        square.appendChild(pDiv);
+                    } else {
+                        pDiv.className = 'piece';
+                        const baseType = p.type.replace('_2', '');
+                        pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + baseType]})`;
+                        if (isUpgradedUnit(p)) pDiv.classList.add('upgraded');
+                        
+                        if (p.armor > 0) {
+                            const badge = document.createElement('div');
+                            badge.className = 'armor-badge';
+                            badge.innerText = p.armor;
+                            pDiv.appendChild(badge);
+                        }
+                        
+                        pDiv.addEventListener('pointerdown', e => onPiecePointerDown(e, r, c));
+                        square.appendChild(pDiv);
+
+                        if (p.onForge && p.color === playerColor) {
+                            selectedPiece = { r, c }; 
+                            forgeActive = true;
+                            square.style.boxShadow = "inset 0 0 20px #e67e22";
+                        }
+                    }
+                } 
+                boardEl.appendChild(square);
+            });
+        });
+
+        forgeUI.style.display = forgeActive ? 'block' : 'none';
+        
+        const els = {
+            wood: document.getElementById('res-wood-val'),
+            stone: document.getElementById('res-stone-val'),
+            metal: document.getElementById('res-metal-val'),
+            cedar: document.getElementById('res-cedar-val'),
+            paper: document.getElementById('res-paper-val'),
+            food: document.getElementById('res-food-val'),
+            gem: document.getElementById('res-gem-val'),
+            coal: document.getElementById('res-coal-val'),
+            polymer: document.getElementById('res-poly-val')
+        };
+        
+        for (let k in els) {
+            if(els[k]) {
+                els[k].innerText = myResources[k];
+                const parent = els[k].parentElement;
+                if (myResources[k] >= 5) parent.classList.add('limit-reached');
+                else parent.classList.remove('limit-reached');
+            }
+        }
+    }
+
+    function useForge() {
+        if (!selectedPiece) return;
+        const p = state[selectedPiece.r][selectedPiece.c];
+        if (!p || !p.onForge) return;
+        
+        if (myResources.metal < 2 || myResources.coal < 2) {
+            showToast("НУЖНО 2 МЕТАЛЛА И 2 УГЛЯ!");
+            return;
+        }
+
+        myResources.metal -= 2;
+        myResources.coal -= 2;
+        p.armor = (p.armor || 0) + 1;
+        
+        sendNetworkMessage({ type: 'forge_armor', r: selectedPiece.r, c: selectedPiece.c });
+        render(); updateUI();
+    }
+
+    function activateApogee() {
+        if (isExpanded) return;
+        // Кнопка сама скроется из-за CSS build-mode, но можно переключить режим
+        // toggleBuildMode(false); // Опционально закрыть меню
+        sendNetworkMessage({ type: 'apogee_trigger' });
+        triggerExpansion();
+    }
+
+    function triggerExpansion() {
+        if (isExpanded) return;
+        
+        const newState = Array(16).fill(null).map(() => Array(8).fill(null));
+        
+        for(let r=0; r<8; r++) {
+            for(let c=0; c<8; c++) {
+                if (state[r][c]) {
+                    if (r < 4) newState[r][c] = state[r][c];
+                    else newState[r + 8][c] = state[r][c]; 
+                }
+            }
+        }
+        
+        state = newState; rows = 16; cols = 8;
+        isExpanded = true;
+        recalcBoard(); // Пересчитываем размер под 16 клеток
+        render(); updateUI();
+        setTimeout(() => { expansionAnimationDone = true; }, 2000);
+    }
+
+    function hasSpecial(color, type) { return state.flat().some(p => p && p.type === type && p.color === color); }
+    
+    function getBuildingCount(baseType) {
+        let count = 0;
+        state.flat().forEach(p => {
+            if (p && p.color === playerColor) {
+                const t = p.type;
+                if (t === baseType || t.startsWith(baseType + '_')) count++;
+                if (baseType === 'forge' && p.onForge) count++;
+            }
+        });
+        return count;
+    }
+
+    function buildSomething(r, c, type) {
+        let apCost = 2;
+        if (type === 'lumber' || type === 'mine' || type === 'demolish' || type === 'hq') apCost = 1;
+
+        if (type === 'demolish') {
+            const target = state[r][c];
+            if (!target || target.color !== playerColor) { showToast("НЕЛЬЗЯ СНОСИТЬ."); return; }
+            
+            const isBuilding = BUILDINGS.includes(target.type) || target.type === 'forge';
+            const isUnitOnForge = target.onForge;
+
+            if (!isBuilding && !isUnitOnForge) {
+                showToast("НЕЛЬЗЯ СНОСИТЬ ЮНИТОВ!");
+                return;
+            }
+            
+            if (actionsLeft < apCost) { showToast(`НУЖНО ${apCost} ОД.`); return; }
+            
+            if (target.onForge) {
+                target.onForge = false;
+            } else {
+                state[r][c] = null;
+            }
+            
+            actionsLeft -= apCost;
+            sendNetworkMessage({ type: 'demolish', r, c, isLast: (actionsLeft<=0) });
+            updateUI(); render();
+            return;
+        }
+
+        const costs = BUILDING_COSTS[type];
+        
+        if (type.endsWith('_t2') || type.endsWith('_t3')) {
+            let baseType = '';
+            let requiredType = '';
+            
+            if (type.endsWith('_t2')) {
+                baseType = type.replace('_t2', '');
+                requiredType = baseType; 
+            } else {
+                baseType = type.replace('_t3', '');
+                requiredType = baseType + '_t2'; 
+            }
+            
+            const target = state[r][c];
+            if (!target || target.type !== requiredType || target.color !== playerColor) {
+                showToast(`СТАВИТЬ ТОЛЬКО НА ${requiredType}!`);
+                return;
+            }
+            if (actionsLeft < apCost) return showToast(`НУЖНО ${apCost} ОД.`);
+            if (!checkResources(costs)) return;
+            
+            payResources(costs);
+            state[r][c].type = type;
+            if (type.startsWith('fortress')) state[r][c].hp = FORTRESS_HP[type];
+            
+            actionsLeft -= apCost;
+            sendNetworkMessage({ type: 'upgrade', r, c, newType: type, isLast: (actionsLeft<=0) });
+            updateUI(); render();
+            return;
+        }
+
+        if (state[r][c]) return; 
+        if (actionsLeft < apCost) return showToast(`НУЖНО ${apCost} ОД.`);
+        
+        const limitType = type;
+        if (BUILDING_LIMITS[limitType] && getBuildingCount(limitType) >= BUILDING_LIMITS[limitType]) {
+            showToast(`ЛИМИТ ПОСТРОЕК (${type})!`);
+            return;
+        }
+
+        if (!checkResources(costs)) return;
+
+        payResources(costs);
+        actionsLeft -= apCost;
+        
+        let newObj = { type: type, color: playerColor };
+        if (type === 'fortress') newObj.hp = FORTRESS_HP['fortress'];
+        
+        state[r][c] = newObj;
+        
+        sendNetworkMessage({ type: 'build', r, c, buildType: type, isLast: (actionsLeft<=0) });
+        updateUI(); render(); 
+    }
+
+    function checkResources(cost) {
+        if (myResources.wood < cost.wood || myResources.stone < cost.stone || 
+            myResources.metal < cost.metal || myResources.cedar < cost.cedar ||
+            myResources.paper < cost.paper || myResources.gem < cost.gem || 
+            myResources.coal < cost.coal) {
+            showToast(`НЕ ХВАТАЕТ РЕСУРСОВ!`);
+            return false;
+        }
+        return true;
+    }
+
+    function payResources(cost) {
+        myResources.wood -= cost.wood;
+        myResources.stone -= cost.stone;
+        myResources.metal -= cost.metal;
+        myResources.cedar -= cost.cedar;
+        myResources.paper -= cost.paper;
+        myResources.gem -= cost.gem;
+        myResources.coal -= cost.coal;
+    }
+
+    function collectResources() {
+        let produced = { w:0, s:0, m:0, c:0, p:0, f:0, g:0, cl:0, poly:0 };
+        
+        for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                const p = state[r][c];
+                if (p && p.color === playerColor) {
+                    if (p.type === 'mine') { if (myResources.stone < 5) produced.s++; }
+                    if (p.type === 'mine_t2') { 
+                        if (myResources.stone < 5) produced.s++; 
+                        if (myResources.metal < 5) produced.m++; 
+                    }
+                    if (p.type === 'mine_t3') {
+                        if (myResources.stone < 5) produced.s++;
+                        if (myResources.metal < 5) produced.m++;
+                        if (myResources.gem < 5) produced.g++;
+                    }
+
+                    if (p.type === 'lumber') { if (myResources.wood < 5) produced.w++; }
+                    if (p.type === 'lumber_t2') { 
+                        if (myResources.wood < 5) produced.w++; 
+                        if (myResources.cedar < 5) produced.c++; 
+                    }
+                    if (p.type === 'lumber_t3') {
+                        if (myResources.wood < 5) produced.w++;
+                        if (myResources.cedar < 5) produced.c++;
+                        if (myResources.polymer < 5) produced.poly++;
+                    }
+
+                    if (p.type === 'furnace') {
+                         if (myResources.cedar > 0 && myResources.coal < 5) {
+                             myResources.cedar--;
+                             produced.cl++;
+                         }
+                    }
+
+                    if (p.type === 'farm') { if (myResources.food < 5) produced.f++; }
+                    if (p.type === 'papermill') {
+                        if (myResources.wood > 0 && myResources.paper < 5) {
+                            myResources.wood--; 
+                            produced.p++;
+                        }
+                    }
+                }
+            }
+        }
+        
+        myResources.wood = Math.min(5, myResources.wood + produced.w);
+        myResources.stone = Math.min(5, myResources.stone + produced.s);
+        myResources.metal = Math.min(5, myResources.metal + produced.m);
+        myResources.cedar = Math.min(5, myResources.cedar + produced.c);
+        myResources.paper = Math.min(5, myResources.paper + produced.p);
+        myResources.food = Math.min(5, myResources.food + produced.f);
+        myResources.gem = Math.min(5, myResources.gem + produced.g);
+        myResources.coal = Math.min(5, myResources.coal + produced.cl);
+        myResources.polymer = Math.min(5, myResources.polymer + produced.poly);
+    }
+
+    function onCampClick(e, r, c) {
+        e.stopPropagation();
+        if (isBuildMode || actionsLeft < 1) return;
+        
+        if (confirm("НАНЯТЬ ПЕШКУ? (2 ЕДЫ, 1 ОД)")) {
+            if (myResources.food < 2) {
+                showToast("НЕ ХВАТАЕТ ЕДЫ!");
+                return;
+            }
+            const dir = playerColor === 'w' ? -1 : 1;
+            const targetR = r + dir;
+            if (targetR < 0 || targetR >= rows || state[targetR][c]) {
+                showToast("МЕСТО ВЫСАДКИ ЗАНЯТО!");
+                return;
+            }
+            myResources.food -= 2;
+            actionsLeft--;
+            state[targetR][c] = { type: 'p', color: playerColor, moved: true, armor: 0 };
+            sendNetworkMessage({ type: 'transform', from: {r: r, c: c}, to: {r: targetR, c: c}, newType: 'p', isLast: (actionsLeft <= 0) });
+            updateUI(); render();
+        }
+    }
+
+    function isValidMove(fr, fc, tr, tc) {
+        if (tr < 0 || tr >= rows || tc < 0 || tc >= cols) return false;
+
+        const p = state[fr][fc]; 
+        if (!p) return false;
+
+        const dest = state[tr][tc];
+
+        if (dest && dest.type === 'forge') return true;
+
+        if (dest && dest.color === p.color) {
+            if ((dest.type === 'academy' || dest.type === 'academy_t2') && p.type === 'p') {
+                return true; 
+            }
+            return false; 
+        }
+
+        if (dest && isUpgradedUnit(dest) && p.type === 'p') return false;
+        
+        const dr = tr - fr, dc = tc - fc; 
+        const adr = Math.abs(dr), adc = Math.abs(dc);
+        const baseType = p.type.replace('_2', '');
+
+        if (['b','r','q'].includes(baseType)) {
+            if (!isPathClear(fr, fc, tr, tc)) return false;
+        }
+
+        switch(baseType) {
+            case 'p':
+                const dir = p.color === 'w' ? -1 : 1;
+                if (dest && (dest.type === 'academy' || dest.type === 'academy_t2') && dest.color === p.color) return true;
+                if (dc === 0 && !dest && dr === dir) return true;
+                if (dc === 0 && !dest && !p.moved && dr === 2 * dir) {
+                    if (!state[fr + dir][fc]) return true;
+                }
+                if (adc === 1 && dr === dir && dest && dest.color !== p.color) return true;
+                return false;
+            case 'n': return (adr === 2 && adc === 1) || (adr === 1 && adc === 2);
+            case 'b': return adr === adc; 
+            case 'r': return (dr === 0 || dc === 0); 
+            case 'q': return (adr === adc || dr === 0 || dc === 0); 
+            case 'k': return (adr <= 1 && adc <= 1); 
+        }
+        return false;
+    }
+
+    function isPathClear(fr, fc, tr, tc) {
+        const stepR = Math.sign(tr - fr), stepC = Math.sign(tc - fc);
+        let curR = fr + stepR, curC = fc + stepC;
+        while (curR !== tr || curC !== tc) { 
+            if (state[curR][curC]) return false; 
+            curR += stepR; curC += stepC; 
+        }
+        return true;
+    }
+
+    function movePiece(fr, fc, tr, tc) {
+        const piece = state[fr][fc];
+        const dest = state[tr][tc];
+
+        if (dest && (dest.type === 'academy' || dest.type === 'academy_t2') && dest.color === piece.color && piece.type === 'p') {
+            openAcademyModal(fr, fc, tr, tc, dest.type === 'academy_t2');
+            return;
+        }
+
+        if (dest && dest.type === 'forge') {
+            if (dest.color === piece.color || !dest.color) { 
+                if (piece.onForge) {
+                    state[fr][fc] = { type: 'forge', color: piece.color };
+                } else {
+                    state[fr][fc] = null;
+                }
+                piece.onForge = true;
+                piece.moved = true;
+                state[tr][tc] = piece;
+
+                actionsLeft--;
+                sendNetworkMessage({ type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, isLast: (actionsLeft<=0), onForgeEnter: true });
+                updateUI(); render();
+                return;
+            }
+        }
+
+        if (piece.onForge) {
+            state[fr][fc] = { type: 'forge', color: piece.color };
+            piece.onForge = false;
+        } else {
+            state[fr][fc] = null;
+        }
+
+        if (dest && dest.color !== piece.color) {
+            if (dest.type.startsWith('fortress')) {
+                if (dest.hp > 1) {
+                    dest.hp--;
+                    if (state[fr][fc] && state[fr][fc].type === 'forge') {
+                        state[fr][fc] = piece; piece.onForge = true;
+                    } else {
+                        state[fr][fc] = piece; 
+                    }
+                    actionsLeft--;
+                    sendNetworkMessage({ type: 'attack_hit', r: tr, c: tc, hp: dest.hp, isLast: (actionsLeft<=0) });
+                    updateUI(); render();
+                    return;
+                }
+            }
+            if (dest.armor > 0) {
+                dest.armor--;
+                if (state[fr][fc] && state[fr][fc].type === 'forge') {
+                    state[fr][fc] = piece; piece.onForge = true;
+                } else {
+                    state[fr][fc] = piece;
+                }
+                actionsLeft--;
+                sendNetworkMessage({ type: 'attack_armor', r: tr, c: tc, armor: dest.armor, isLast: (actionsLeft<=0) });
+                updateUI(); render();
+                return;
+            }
+        }
+
+        let isWinMove = (dest && dest.type === 'k');
+        if (isWinMove) endGame(true);
+
+        let costsAP = true;
+        if (isUpgradedUnit(piece)) {
+            if (!piece.freeMoveUsed) {
+                costsAP = false;
+                piece.freeMoveUsed = true; 
+            }
+        }
+
+        state[tr][tc] = piece; 
+        piece.moved = true; 
+        
+        if (costsAP) actionsLeft--;
+        
+        const endRow = playerColor === 'w' ? 0 : (rows - 1);
+        if (piece.type === 'p' && tr === endRow && !isWinMove) {
+            showPromotionModal(fr, fc, tr, tc); 
+            return; 
+        }
+
+        sendNetworkMessage({ 
+            type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, 
+            isLast: (actionsLeft <= 0), win: isWinMove, 
+            freeMoveUsed: !costsAP 
+        });
+        updateUI(); render();
+    }
+
+    function openAcademyModal(fr, fc, tr, tc, isT2) {
+        pendingAcademy = { from: {r:fr, c:fc}, acad: {r:tr, c:tc} };
+        const modal = document.getElementById('academy-modal');
+        const stdContainer = document.getElementById('acad-std-options');
+        const eliteContainer = document.getElementById('acad-elite-options');
+        const eliteSection = document.getElementById('acad-elite-section');
+
+        stdContainer.innerHTML = '';
+        eliteContainer.innerHTML = '';
+
+        const units = [{t:'n', i:'♞'}, {t:'b', i:'♝'}, {t:'r', i:'♜'}];
+
+        units.forEach(u => {
+            const btn = document.createElement('div');
+            btn.className = 'promo-btn';
+            btn.innerHTML = `${u.i}<span class="cost">2 БУМАГИ</span>`;
+            btn.onclick = () => finishAcademyRecruit(u.t, 2);
+            stdContainer.appendChild(btn);
+        });
+
+        if (isT2) {
+            eliteSection.classList.remove('hidden');
+            units.forEach(u => {
+                const btn = document.createElement('div');
+                btn.className = 'promo-btn upgraded-offer';
+                btn.innerHTML = `${u.i}<span class="cost" style="color:gold">5 БУМАГИ</span>`;
+                btn.onclick = () => finishAcademyRecruit(u.t + '_2', 5); 
+                eliteContainer.appendChild(btn);
+            });
+        } else {
+            eliteSection.classList.add('hidden');
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    function finishAcademyRecruit(newType, paperCost) {
+        if (actionsLeft < 1) {
+             showToast("НЕТ ОД ДЛЯ ОБУЧЕНИЯ!");
+             return;
+        }
+
+        if (myResources.paper < paperCost) {
+            showToast(`НЕ ХВАТАЕТ БУМАГИ (НУЖНО ${paperCost})!`);
+            return;
+        }
+        myResources.paper -= paperCost;
+
+        const { from, acad } = pendingAcademy;
+        const dir = playerColor === 'w' ? -1 : 1;
+        const spawnR = acad.r + dir;
+        const spawnC = acad.c;
+
+        if (spawnR < 0 || spawnR >= rows || state[spawnR][spawnC]) {
+            showToast("ВЫХОД ИЗ АКАДЕМИИ ЗАБЛОКИРОВАН!");
+            closeModal('academy-modal');
+            return;
+        }
+
+        state[from.r][from.c] = null;
+        state[spawnR][spawnC] = { type: newType, color: playerColor, moved: true, freeMoveUsed: false, armor: 0 };
+        
+        actionsLeft--; 
+        sendNetworkMessage({ 
+            type: 'transform', from: from, to: {r:spawnR, c:spawnC}, 
+            newType: newType, isLast: (actionsLeft <= 0) 
+        });
+        
+        closeModal('academy-modal');
+        updateUI(); render();
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    window.finishPromotion = function(newType) {
+        document.getElementById('promotion-modal').classList.add('hidden');
+        const { fr, fc, tr, tc } = pendingMove;
+        state[tr][tc] = state[fr][fc]; state[tr][tc].type = newType; state[fr][fc] = null;
+        actionsLeft--;
+        sendNetworkMessage({ type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, isLast: (actionsLeft <= 0), win: false, promoteTo: newType });
+        pendingMove = null; updateUI(); render();
+    };
+
+    function showPromotionModal(fr, fc, tr, tc) {
+        pendingMove = { fr, fc, tr, tc };
+        const modal = document.getElementById('promotion-modal');
+        const container = document.getElementById('promo-options-container');
+        container.innerHTML = '';
+        [{t:'q', i:'♛'}, {t:'r', i:'♜'}, {t:'b', i:'♝'}, {t:'n', i:'♞'}].forEach(opt => {
+            const btn = document.createElement('div');
+            btn.className = 'promo-btn';
+            btn.innerHTML = opt.i;
+            btn.onclick = () => window.finishPromotion(opt.t);
+            container.appendChild(btn);
+        });
+        modal.classList.remove('hidden');
+    }
+
+    function endGame(isWin) {
+        gameOver = true;
+        const modal = document.getElementById('victory-modal');
+        const title = document.getElementById('victory-title');
+        title.innerHTML = isWin ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ...';
+        title.style.color = isWin ? '#2ecc71' : '#e74c3c';
+        modal.classList.remove('hidden');
+    }
+
+    function updateUI() {
+        const statusEl = document.getElementById('status');
+        const hasHQ = hasSpecial(playerColor, 'hq');
+
+        if (actionsLeft > 0) {
+            if (!hasHQ) {
+                statusEl.textContent = "ТВОЙ ХОД"; 
+            } else {
+                statusEl.textContent = `ТВОЙ ХОД (${actionsLeft} ОД)`;
+            }
+        } else {
+            statusEl.textContent = "ХОД ПРОТИВНИКА...";
+        }
+        
+        if (isBuildMode) document.body.classList.add('build-mode');
+        else document.body.classList.remove('build-mode');
+        
+        document.getElementById('btn-build-hq').classList.toggle('hidden-btn', hasHQ);
+
+        // Apogee button visibility handled by CSS now (display:none vs block)
+    }
+
+    window.onkeydown = (e) => {
+        if ((e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'и') && actionsLeft > 0) {
+            toggleBuildMode();
+        }
+    };
+
+    function handleData(d) {
+        const oppColor = (playerColor === 'w' ? 'b' : 'w');
+        
+        if (d.type === 'move') {
+            let movingPiece = state[d.from.r][d.from.c];
+            if (!movingPiece) movingPiece = { type: 'p', color: oppColor }; 
+
+            if (movingPiece && movingPiece.onForge) {
+                    state[d.from.r][d.from.c] = { type: 'forge', color: movingPiece.color };
+            } else {
+                    state[d.from.r][d.from.c] = null;
+            }
+            if (d.onForgeEnter) {
+                    movingPiece.onForge = true;
+                    movingPiece.moved = true;
+                    if (d.promoteTo) movingPiece.type = d.promoteTo; 
+                    state[d.to.r][d.to.c] = movingPiece;
+            } else {
+                    movingPiece.moved = true;
+                    if (d.promoteTo) movingPiece.type = d.promoteTo;
+                    state[d.to.r][d.to.c] = movingPiece;
+            }
+            if (d.win) endGame(false);
+        } else if (d.type === 'attack_hit') {
+            if (state[d.r][d.c]) state[d.r][d.c].hp = d.hp;
+        } else if (d.type === 'attack_armor') {
+            if (state[d.r][d.c]) state[d.r][d.c].armor = d.armor;
+        } else if (d.type === 'forge_armor') {
+            if (state[d.r][d.c]) state[d.r][d.c].armor = (state[d.r][d.c].armor || 0) + 1;
+        } else if (d.type === 'transform') {
+            if (state[d.from.r][d.from.c] && state[d.from.r][d.from.c].type === 'p') {
+                state[d.from.r][d.from.c] = null;
+            } 
+            state[d.to.r][d.to.c] = { type: d.newType, color: oppColor, moved: true, armor: 0 };
+        } else if (d.type === 'build') {
+            let obj = { type: d.buildType, color: oppColor };
+            if (d.buildType === 'fortress') obj.hp = FORTRESS_HP['fortress'];
+            state[d.r][d.c] = obj;
+        } else if (d.type === 'upgrade') {
+            if(state[d.r][d.c]) {
+                state[d.r][d.c].type = d.newType;
+                if (d.newType.startsWith('fortress')) state[d.r][d.c].hp = FORTRESS_HP[d.newType];
+            }
+        } else if (d.type === 'demolish') {
+            if (state[d.r][d.c] && state[d.r][d.c].onForge) {
+                state[d.r][d.c].onForge = false;
+            } else {
+                state[d.r][d.c] = null;
+            }
+        } else if (d.type === 'apogee_trigger') {
+            triggerExpansion();
+        }
+
+        if (d.isLast) turnEndLogic();
+        render(); updateUI();
+    }
+
+    function turnEndLogic() {
+        actionsLeft = hasSpecial(playerColor, 'hq') ? 2 : 1; 
+        state.flat().forEach(p => { if (p) p.freeMoveUsed = false; });
+        collectResources();
+    }
+
+    function onPiecePointerDown(e, fr, fc) {
+        if (gameOver || !currentRoom || actionsLeft <= 0 || isBuildMode) {
+             if (!isBuildMode && state[fr][fc] && state[fr][fc].onForge && state[fr][fc].color === playerColor) {
+                 selectedPiece = {r: fr, c: fc};
+                 render(); 
+             }
+             return;
+        }
+        if (state[fr][fc] && state[fr][fc].type === 'camp') return;
+        const p = state[fr][fc];
+        if (!p || p.color !== playerColor) return;
+        
+        selectedPiece = {r: fr, c: fc}; 
+        
+        dragState.isBuildingDrag = false;
+        dragState.from = { r: fr, c: fc };
+        const baseType = p.type.replace('_2', '');
+        initDrag(e, `url(${PIECE_URLS[p.color + baseType]})`);
+    }
+
+    function onSidebarPointerDown(e, type) {
+        if (gameOver || !currentRoom || actionsLeft <= 0 || !isBuildMode) return;
+        
+        dragState.isBuildingDrag = true;
+        dragState.from = { type: type };
+        
+        initDrag(e, null, BUILDING_ICONS[type] || BUILDING_ICONS[type.replace('_t2','').replace('_t3','')]);
+    }
+
+    function initDrag(e, bgImage, icon) {
+        dragState.pointerId = e.pointerId;
+        dragState.startX = e.clientX; dragState.startY = e.clientY;
+        dragState.started = false;
+        
+        const clone = document.createElement('div');
+        clone.className = 'dragging-clone';
+        if (bgImage) clone.style.backgroundImage = bgImage;
+        if (icon) clone.innerHTML = icon;
+        
+        dragState.cloneEl = clone;
+
+        document.addEventListener('pointermove', onDocumentPointerMove);
+        document.addEventListener('pointerup', onDocumentPointerUp);
+        document.addEventListener('pointercancel', cleanupDrag);
+    }
+
+    function onDocumentPointerMove(e) {
+        if (e.pointerId !== dragState.pointerId) return;
+        
+        const dist = Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY);
+
+        if (!dragState.started) {
+            if (dist > 10) {
+                dragState.started = true;
+                document.body.appendChild(dragState.cloneEl);
+                dragState.cloneEl.style.display = 'flex';
+            } else {
+                return;
+            }
+        }
+        
+        if (dragState.started) {
+            e.preventDefault();
+            dragState.cloneEl.style.left = `${e.clientX}px`;
+            dragState.cloneEl.style.top = `${e.clientY}px`;
+            updateHoverHighlight(e.clientX, e.clientY);
+        }
+    }
+
+    function onDocumentPointerUp(e) {
+        if (e.pointerId !== dragState.pointerId) return;
+        
+        if (dragState.started) {
+            const target = getSquareFromPoint(e.clientX, e.clientY);
+            if (target) {
+                if (dragState.isBuildingDrag) {
+                    if (isNearOwnPiece(target.r, target.c)) {
+                        buildSomething(target.r, target.c, dragState.from.type);
+                    } else if (dragState.from.type === 'demolish') {
+                        buildSomething(target.r, target.c, 'demolish');
+                    } else {
+                        showToast("СТРОИТЬ МОЖНО ТОЛЬКО РЯДОМ С СОЮЗНЫМИ ЮНИТАМИ.");
+                    }
+                } else {
+                    if (isValidMove(dragState.from.r, dragState.from.c, target.r, target.c)) {
+                        movePiece(dragState.from.r, dragState.from.c, target.r, target.c);
+                    }
+                }
+            }
+        }
+        cleanupDrag();
+    }
+
+    function isNearOwnPiece(r, c) {
+        if (state[r][c] && state[r][c].color === playerColor && (dragState.from.type.endsWith('_t2') || dragState.from.type.endsWith('_t3'))) return true;
+        if (state[r][c]) return false; 
+        
+        const targetIsFog = isFog(r, c);
+        for(let dr = -1; dr <= 1; dr++) {
+            for(let dc = -1; dc <= 1; dc++) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                    const neighbor = state[nr][nc];
+                    if (neighbor && neighbor.color === playerColor && !BUILDINGS.includes(neighbor.type)) {
+                        if (targetIsFog === isFog(nr, nc)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    function cleanupDrag() {
+        if (dragState.cloneEl && dragState.cloneEl.parentElement) dragState.cloneEl.parentElement.removeChild(dragState.cloneEl);
+        if (dragState.lastHover) dragState.lastHover.classList.remove('drag-over');
+        dragState.lastHover = null;
+        dragState.started = false;
+        
+        document.removeEventListener('pointermove', onDocumentPointerMove);
+        document.removeEventListener('pointerup', onDocumentPointerUp);
+        document.removeEventListener('pointercancel', cleanupDrag);
+    }
+
+    function updateHoverHighlight(x, y) {
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'none';
+        const el = document.elementFromPoint(x, y);
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'flex';
+        
+        const sq = el?.closest('.square');
+        if (dragState.lastHover && dragState.lastHover !== sq) dragState.lastHover.classList.remove('drag-over');
+        if (sq) {
+            sq.classList.add('drag-over');
+            dragState.lastHover = sq;
+        }
+    }
+
+    function getSquareFromPoint(x, y) {
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'none';
+        const el = document.elementFromPoint(x, y);
+        if(dragState.cloneEl) dragState.cloneEl.style.display = 'flex';
+        
+        const sq = el?.closest('.square'); 
+        if (!sq) return null;
+        
+        const idx = Array.from(document.getElementById('board').children).indexOf(sq);
+        if (idx === -1) return null;
+        const visualRow = Math.floor(idx / cols);
+        const c = idx % cols;
+        const r = playerColor === 'b' ? (rows - 1) - visualRow : visualRow;
+        return { r, c };
+    }
+</script>
+</body>
+</html>
