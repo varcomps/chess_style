@@ -215,9 +215,22 @@ function triggerExpansion() {
     const newState = Array(16).fill(null).map(() => Array(8).fill(null));
     for(let r=0; r<8; r++) {
         for(let c=0; c<8; c++) {
-            if (gameState.board[r][c]) {
-                if (r < 4) newState[r][c] = gameState.board[r][c];
-                else newState[r + 8][c] = gameState.board[r][c]; 
+            const p = gameState.board[r][c];
+            if (p) {
+                if (r < 4) {
+                    newState[r][c] = p; // Top half stays
+                } else {
+                    // Logic: Enemy mobile units (color 'b') stay in Fog (gap).
+                    // Buildings and friendly units move with the ground (r + 8).
+                    const isBuilding = BUILDINGS.includes(p.type) || p.type === 'forge';
+                    if (p.color === 'b' && !isBuilding) {
+                         // Stay in place (indices 4-7 become Fog)
+                         newState[r][c] = p;
+                    } else {
+                         // Move to bottom (indices 12-15)
+                         newState[r + 8][c] = p;
+                    }
+                }
             }
         }
     }

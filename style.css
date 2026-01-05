@@ -282,9 +282,10 @@ button:active { transform: scale(0.96); }
     width: max-content; height: max-content;
 }
 
-.build-mode #board:not(.expanded) { 
-    border-color: var(--accent); 
-    box-shadow: 0 0 40px rgba(243, 156, 18, 0.2); 
+/* ИЗМЕНЕНИЕ: Желтая рамка всегда в режиме строительства */
+.build-mode #board { 
+    border: 4px solid var(--accent) !important; 
+    box-shadow: 0 0 40px rgba(243, 156, 18, 0.4) !important; 
 }
 
 #board.expanded { background: transparent; border: none; box-shadow: none; }
@@ -299,15 +300,15 @@ button:active { transform: scale(0.96); }
 .square.light { background-color: var(--sq-light); }
 .square.dark { background-color: var(--sq-dark); }
 
+/* ИЗМЕНЕНИЕ: Туман светлее */
 .square.fog {
-    /* СДЕЛАНО СВЕТЛЕЕ */
-    background-color: #1a1a1a !important;
+    background-color: #252525 !important;
     background-image: 
-        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
     background-size: 100% 100%, 100% 100%;
-    border: 1px solid rgba(255,255,255,0.05); 
-    box-shadow: inset 0 0 30px #000;
+    border: 1px solid rgba(255,255,255,0.1); 
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
     z-index: 1;
 }
 
