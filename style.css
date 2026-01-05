@@ -61,7 +61,7 @@ body::before {
 
 .ui { 
     pointer-events: auto;
-    background: var(--menu-bg); padding: 8px 20px; 
+    background: var(--menu-bg); padding: 8px 15px; 
     border-radius: 20px; text-align: center; 
     border: 1px solid var(--glass-border); 
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -79,10 +79,19 @@ body::before {
 
 #resource-panel {
     display: none; 
-    flex-wrap: wrap; justify-content: center; gap: 8px;
+    flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 5px;
     margin-top: 5px; padding-top: 5px;
     border-top: 1px solid rgba(255,255,255,0.05);
 }
+
+.res-group {
+    display: flex; gap: 8px; padding: 4px 8px; 
+    border-radius: 8px; align-items: center;
+    background: rgba(255,255,255,0.03);
+}
+.t1-res { border: 1px solid rgba(189, 195, 199, 0.2); }
+.t2-res { border: 1px solid rgba(46, 204, 113, 0.2); }
+.t3-res { border: 1px solid rgba(0, 210, 211, 0.2); }
 
 #btn-apogee {
     display: none;
@@ -565,4 +574,5 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 15px rgba(241, 196, 1
     border: 1px solid var(--accent); color: #ecf0f1; font-size: 13px;
     box-shadow: 0 5px 20px rgba(0,0,0,0.8);
     display: none; white-space: nowrap; backdrop-filter: blur(4px);
+    max-width: 250px; white-space: normal;
 }

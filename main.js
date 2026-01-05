@@ -94,9 +94,15 @@ document.querySelectorAll('.build-item').forEach(item => {
 function showTooltip(e, item, isTouch = false) {
     const label = item.getAttribute('data-label');
     const cost = item.getAttribute('data-cost');
+    const desc = item.getAttribute('data-desc') || '';
+    
     if(label) {
         tooltipEl.style.display = 'block';
-        tooltipEl.innerHTML = `<strong style="color:var(--accent);">${label}</strong><br><span style="color:#fff">${cost}</span>`;
+        tooltipEl.innerHTML = `
+            <strong style="color:var(--accent); font-size:1.1em;">${label}</strong><br>
+            <span style="color:#ddd; font-weight:bold;">${cost}</span>
+            ${desc ? `<div style="margin-top:5px; color:#aaa; font-style:italic; font-size:0.9em; border-top:1px solid #444; padding-top:4px;">${desc}</div>` : ''}
+        `;
         if (!isTouch) moveTooltip(e); 
     }
 }
