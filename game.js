@@ -56,10 +56,19 @@ export function handleData(d) {
         if (gameState.board[d.r][d.c] && gameState.board[d.r][d.c].onForge) gameState.board[d.r][d.c].onForge = false;
         else gameState.board[d.r][d.c] = null;
     } else if (d.type === 'apogee_trigger') {
-        triggerExpansion();
+        playSlashAnimation();
+        setTimeout(() => triggerExpansion(), 600); // Wait for slash
     }
     if (d.isLast) turnEndLogic();
     render(); updateUI();
+}
+
+function playSlashAnimation() {
+    const overlay = document.getElementById('slash-overlay');
+    overlay.classList.add('active');
+    setTimeout(() => {
+        overlay.classList.remove('active');
+    }, 1000);
 }
 
 export function turnEndLogic() {
@@ -206,37 +215,113 @@ function payResources(cost) {
 
 export function activateApogee() {
     if (gameState.isExpanded) return;
+    playSlashAnimation();
     sendNetworkMessage({ type: 'apogee_trigger' });
-    triggerExpansion();
+    setTimeout(() => triggerExpansion(), 600);
 }
 
 function triggerExpansion() {
     if (gameState.isExpanded) return;
     const newState = Array(16).fill(null).map(() => Array(8).fill(null));
+    
+    // SYMMETRIC LOGIC:
+    // Original Board: 0-7.
+    // Cut happens between 3 and 4.
+    // Top Plate (Black Home): 0-3 -> Stays at 0-3.
+    // Bottom Plate (White Home): 4-7 -> Moves to 12-15.
+    // Fog Gap: 4-11 (8 rows).
+    
     for(let r=0; r<8; r++) {
         for(let c=0; c<8; c++) {
             const p = gameState.board[r][c];
             if (p) {
+                const isBuilding = BUILDINGS.includes(p.type) || p.type === 'forge';
+
                 if (r < 4) {
-                    newState[r][c] = p; // Top half stays
-                } else {
-                    // Logic: Enemy mobile units (color 'b') stay in Fog (gap).
-                    // Buildings and friendly units move with the ground (r + 8).
-                    const isBuilding = BUILDINGS.includes(p.type) || p.type === 'forge';
-                    if (p.color === 'b' && !isBuilding) {
-                         // Stay in place (indices 4-7 become Fog)
-                         newState[r][c] = p;
+                    // --- TOP SECTION (Originally Black Base) ---
+                    // If it's a White invader (color 'w' and NOT a building) -> Glitch into Fog
+                    if (p.color === 'w' && !isBuilding) {
+                        // Move to lower part of Fog (rows 8-11) to avoid overlap with Black invaders
+                        p.glitched = true;
+                        newState[r + 8][c] = p; 
                     } else {
-                         // Move to bottom (indices 12-15)
-                         newState[r + 8][c] = p;
+                        // Black pieces and buildings stay on the plate
+                        newState[r][c] = p;
+                    }
+                } else {
+                    // --- BOTTOM SECTION (Originally White Base) ---
+                    // If it's a Black invader (color 'b' and NOT a building) -> Glitch into Fog
+                    if (p.color === 'b' && !isBuilding) {
+                        // Stay in upper part of Fog (rows 4-7)
+                        p.glitched = true;
+                        newState[r][c] = p;
+                    } else {
+                        // White pieces and buildings move with the plate
+                        newState[r + 8][c] = p;
                     }
                 }
             }
         }
     }
-    gameState.board = newState; gameState.rows = 16; gameState.cols = 8;
+    
+    gameState.board = newState; 
+    gameState.rows = 16; 
+    gameState.cols = 8;
     gameState.isExpanded = true;
-    recalcBoard(); render(); updateUI();
+    
+    recalcBoard(); 
+    render(); 
+    updateUI();
+    
+    // Apply visual glitch effect to pieces marked as glitched
+    setTimeout(() => {
+        const pieces = document.querySelectorAll('.piece');
+        gameState.board.flat().forEach((p, index) => {
+             if (p && p.glitched) {
+                 // We need to find the DOM element. 
+                 // Render rebuilds DOM, so we can find by r,c calculation or just add class in render.
+                 // Better: Let's re-render with the class if needed, or modify render function.
+                 // For now, let's just make sure render() handles a 'glitched' property or we add it manually.
+                 // Actually, let's update render() to check for p.glitched property?
+                 // Easier: Modify render in this response is tricky since render is in ui.js. 
+                 // Instead, let's just select them based on rows.
+             }
+        });
+        
+        // Manual DOM update for glitch effect based on rows
+        const squares = document.getElementById('board').children;
+        for (let r=4; r<=11; r++) {
+            for (let c=0; c<8; c++) {
+                const idx = (gameState.rows - 1 - r) * 8 + c; // Logic depends on perspective, but let's simplify
+                // Actually, render() creates divs in order.
+                // Row 0 is top if rendering logic follows standard loops.
+                // The render loop in ui.js: rangeR.forEach...
+            }
+        }
+        
+        // Let's just iterate the board data and find the DOM elements
+        const boardEl = document.getElementById('board');
+        // Because render() wipes HTML, we should update render in ui.js OR add the class here after render.
+        // Let's add the class here.
+        const allSquares = Array.from(boardEl.children);
+        let sqIdx = 0;
+        // Re-simulate render loop to match indices
+        const rangeR = gameState.playerColor === 'b' ? [...Array(16).keys()].reverse() : [...Array(16).keys()];
+        const rangeC = [...Array(8).keys()];
+        
+        rangeR.forEach(r => {
+            rangeC.forEach(c => {
+                 const p = gameState.board[r][c];
+                 if (p && p.glitched) {
+                     const pieceEl = allSquares[sqIdx].querySelector('.piece');
+                     if (pieceEl) pieceEl.classList.add('glitched-piece');
+                 }
+                 sqIdx++;
+            });
+        });
+        
+    }, 50);
+
     setTimeout(() => { gameState.expansionAnimationDone = true; }, 2000);
 }
 
@@ -334,13 +419,16 @@ export function isValidMove(fr, fc, tr, tc) {
     const isKnight = baseType === 'n';
 
     if (gameState.isExpanded) {
+        // Base logic: 0-3 (Top), 4-11 (Fog), 12-15 (Bottom)
         const startBase = (fr < 4) ? 1 : (fr > 11 ? 2 : 0);
         const endBase = (tr < 4) ? 1 : (tr > 11 ? 2 : 0);
         
+        // Cannot move between bases directly
         if (startBase !== 0 && endBase !== 0 && startBase !== endBase) {
             return false;
         }
 
+        // Fog movement restriction (except Knights)
         if (startFog !== endFog && !isKnight) {
             if (Math.abs(tr - fr) > 1 || Math.abs(tc - fc) > 1) return false;
         }
