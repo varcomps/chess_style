@@ -30,7 +30,19 @@ export function createGame() {
     gameState.currentRoom = roomCode;
     gameState.myColor = 'w';
     document.getElementById('status').innerText = `КОМНАТА: ${roomCode}`;
-    showToast(`Комната ${roomCode} создана.`);
+    
+    // --- КОПИРОВАНИЕ В БУФЕР ---
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(roomCode).then(() => {
+            showToast(`КОД ${roomCode} СКОПИРОВАН!`);
+        }).catch(err => {
+            console.error('Ошибка копирования:', err);
+            showToast(`Комната ${roomCode} создана.`);
+        });
+    } else {
+        showToast(`Комната ${roomCode} создана.`);
+    }
+
     gameState.gameRef = ref(gameState.db, 'games/' + roomCode);
     set(gameState.gameRef, { status: 'waiting', white_present: true, last_move: null }).then(() => {
         onDisconnect(gameState.gameRef).remove();
